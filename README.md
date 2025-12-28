@@ -4,8 +4,8 @@
 
 Projectify is a powerful, standalone Node.js tool designed to analyze codebase architectures, calculate dependency impacts ("Blast Radius"), and generate stunning, interactive visualizations. Built with TypeScript and powered by AI.
 
-![Projectify HTML Report](./graph.png)
-![Projectify HTML Report](./functions.png)
+![Projectify HTML Report](https://github.com/GreenHacker420/project-analyzer/raw/main/graph.png)
+![Projectify HTML Report](https://github.com/GreenHacker420/project-analyzer/raw/main/functions.png)
 
 ## Features
 
