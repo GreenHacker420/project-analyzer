@@ -10,7 +10,7 @@ export class CodeIntelligence {
         this.model = new ChatOpenAI({
             openAIApiKey: apiKey,
             temperature: 0,
-            modelName: 'gpt-4o' 
+            modelName: 'gpt-4o'
         });
     }
 
