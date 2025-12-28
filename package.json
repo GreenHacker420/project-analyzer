@@ -3,8 +3,11 @@
   "version": "1.0.0",
   "description": "Project Analyzer using LangChain",
   "main": "dist/index.js",
+  "bin": {
+    "projectify": "./dist/index.js"
+  },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && echo '#!/usr/bin/env node' | cat - dist/index.js > dist/index.js.tmp && mv dist/index.js.tmp dist/index.js && chmod +x dist/index.js",
     "start": "node dist/index.js",
     "test": "jest",
     "dev": "ts-node src/index.ts"

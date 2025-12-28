@@ -33,6 +33,25 @@ npm run build
 
 ## Usage
 
+### Using npx (Recommended)
+
+Run directly without installing:
+
+```bash
+npx projectify-cli [path] [options]
+```
+
+### Global Installation
+
+```bash
+npm install -g projectify-cli
+
+# Run anywhere
+projectify [path] [options]
+```
+
+### Local Development
+
 Run the analyzer on any project directory:
 
 ```bash
