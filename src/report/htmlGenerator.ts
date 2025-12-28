@@ -16,37 +16,48 @@ export async function generateHtmlReport(
     const topRisks = graph.getTopBlastRadius(10);
     const topRiskIds = new Set(topRisks.map(n => n.id));
 
+    // Calculate node sizes and colors
     graph.getNodes().forEach(node => {
-        let color = '#3b82f6'; // Blue-500
+        let color = '#60a5fa'; // Blue-400 (Default)
         let size = 20;
+        let shape = 'dot';
 
         if (topRiskIds.has(node.id)) {
-            color = '#ef4444'; // Red-500
-            size = 30 + (node.blastRadius / 2);
-        } else if (node.affectedFiles > 0) {
-            color = '#eab308'; // Yellow-500
+            color = '#f43f5e'; // Rose-500 (High Risk)
+            size = 35 + (node.blastRadius / 2);
+            shape = 'hexagon';
+        } else if (node.affectedFiles > 5) {
+            color = '#fbbf24'; // Amber-400 (Medium Risk)
             size = 25;
         }
 
         nodes.push({
             id: node.id,
             label: path.basename(node.id),
-            title: `${path.basename(node.id)}`,
+            title: node.id, // Tooltip
             value: size,
-            color: color,
+            color: { background: color, border: '#ffffff' },
+            shape: shape,
+            font: { color: '#e4e4e7' }, // Zinc-200
             data: {
                 fullPath: node.id,
                 blastRadius: node.blastRadius.toFixed(2),
                 affectedFiles: node.affectedFiles,
-                inDegree: node.inDegree, // Deps
-                outDegree: node.outDegree // Dependents
+                inDegree: node.inDegree,
+                outDegree: node.outDegree
             }
         });
     });
 
     graph.getEdges().forEach((targets, source) => {
         targets.forEach(target => {
-            edges.push({ from: source, to: target, arrows: 'to', color: { color: '#71717a', opacity: 0.3 } });
+            edges.push({
+                from: source,
+                to: target,
+                arrows: 'to',
+                color: { color: '#52525b', opacity: 0.4 }, // Zinc-600
+                dashes: false
+            });
         });
     });
 
@@ -56,294 +67,377 @@ export async function generateHtmlReport(
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Projectify Analysis</title>
+    <title>Projectify Analysis Report</title>
+    <!-- Tailwind CSS (via CDN) -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script>
         tailwind.config = {
             darkMode: 'class',
             theme: {
                 extend: {
-                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
                     colors: {
                         background: '#09090b', // zinc-950
-                        foreground: '#fafafa', // zinc-50
-                        card: '#18181b', // zinc-900
-                        'card-foreground': '#fafafa',
-                        popover: '#18181b',
-                        'popover-foreground': '#fafafa',
-                        primary: '#fafafa',
-                        'primary-foreground': '#18181b',
-                        secondary: '#27272a', // zinc-800
-                        'secondary-foreground': '#fafafa',
-                        muted: '#27272a',
-                        'muted-foreground': '#a1a1aa', // zinc-400
-                        accent: '#27272a',
-                        'accent-foreground': '#fafafa',
-                        destructive: '#7f1d1d',
-                        'destructive-foreground': '#fafafa',
-                        border: '#27272a',
-                        input: '#27272a',
-                        ring: '#d4d4d8',
+                        surface: '#18181b',    // zinc-900
+                        primary: '#3b82f6',    // blue-500
+                        accent: '#f43f5e',     // rose-500
+                        border: '#27272a',     // zinc-800
                     }
                 }
             }
         }
     </script>
+    <!-- VS Code Icons (via CDN for file icons if needed, or simplified) -->
+    
+    <!-- Vis.js -->
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
     <style>
-        body { background-color: #09090b; color: #fafafa; }
+        body { 
+            background-color: #09090b; 
+            color: #fafafa;
+            overflow: hidden; /* Prevent body scroll */
+        }
+        
+        .glass {
+            background: rgba(24, 24, 27, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .scrollbar-hide::-webkit-scrollbar {
+            display: none;
+        }
+
+        /* Custom Scrollbar for sidebars */
+        .custom-scroll::-webkit-scrollbar { width: 6px; }
+        .custom-scroll::-webkit-scrollbar-track { background: transparent; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #27272a; border-radius: 3px; }
+        .custom-scroll::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
+
         .vis-network { outline: none; }
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: #09090b; }
-        ::-webkit-scrollbar-thumb { background: #27272a; border-radius: 3px; }
-        ::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
+        
+        .animate-fade-in { animation: fadeIn 0.3s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 </head>
-<body class="flex h-screen overflow-hidden font-sans">
+<body class="flex h-screen font-sans antialiased text-zinc-100 bg-background selection:bg-primary/30">
 
-    <!-- Sidebar -->
-    <div class="w-80 h-full border-r border-border bg-background flex flex-col z-20 shadow-2xl relative">
-        <div class="p-6 border-b border-border">
-            <div class="flex items-center gap-2 mb-1">
-                <div class="w-8 h-8 rounded-lg bg-white flex items-center justify-center text-black font-bold text-lg">P</div>
-                <h1 class="text-xl font-bold tracking-tight">Projectify</h1>
+    <!-- LEFT SIDEBAR: Navigation & Stats -->
+    <aside class="w-80 flex-shrink-0 border-r border-border bg-surface/50 h-full flex flex-col z-20">
+        <!-- Brand -->
+        <div class="h-16 flex items-center px-6 border-b border-border">
+            <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-violet-600 flex items-center justify-center text-white font-bold text-lg shadow-lg shadow-blue-500/20 mr-3">P</div>
+            <div>
+                <h1 class="font-bold text-lg tracking-tight">Projectify</h1>
+                <p class="text-[10px] text-zinc-500 font-medium uppercase tracking-wider">Analysis Report</p>
             </div>
-            <p class="text-xs text-muted-foreground truncate" title="${projectPath}">${projectPath}</p>
         </div>
 
-        <div class="flex-1 overflow-y-auto p-4 space-y-6">
-            <!-- Stats Grid -->
+        <!-- Scrollable Content -->
+        <div class="flex-1 overflow-y-auto custom-scroll p-4 space-y-6">
+            
+            <!-- Key Metrics Grid -->
             <div class="grid grid-cols-2 gap-3">
-                <div class="bg-card border border-border rounded-xl p-3 shadow-sm">
-                    <div class="text-xs text-muted-foreground font-medium mb-1">Files</div>
-                    <div class="text-2xl font-bold tracking-tight">${analysis.fileCount}</div>
+                <div class="glass rounded-xl p-3 hover:bg-white/5 transition-colors">
+                    <p class="text-[10px] text-zinc-400 font-medium uppercase mb-1">Total Files</p>
+                    <p class="text-2xl font-bold font-mono">${analysis.fileCount}</p>
                 </div>
-                <div class="bg-card border border-border rounded-xl p-3 shadow-sm">
-                    <div class="text-xs text-muted-foreground font-medium mb-1">Relations</div>
-                    <div class="text-2xl font-bold tracking-tight">${edges.length}</div>
+                <div class="glass rounded-xl p-3 hover:bg-white/5 transition-colors">
+                    <p class="text-[10px] text-zinc-400 font-medium uppercase mb-1">Relations</p>
+                    <p class="text-2xl font-bold font-mono">${edges.length}</p>
                 </div>
             </div>
 
-            <!-- Risk Section -->
+            <!-- Blast Radius Risks -->
             <div>
-                <h3 class="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 px-1">High Impact Components</h3>
-                <div class="space-y-2">
-                    ${topRisks.map(n => `
-                    <div onclick="focusNode('${n.id}')" class="group flex items-center justify-between p-2 rounded-lg hover:bg-accent transition-colors cursor-pointer border border-transparent hover:border-border">
-                        <div class="flex items-center gap-3 overflow-hidden">
-                            <div class="w-2 h-2 rounded-full bg-red-500 shrink-0"></div>
-                            <span class="text-sm font-medium truncate group-hover:text-white text-zinc-300" title="${n.id}">${path.basename(n.id)}</span>
+                <div class="flex items-center justify-between mb-3 px-1">
+                    <h3 class="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Top Risks</h3>
+                    <span class="text-[10px] bg-rose-500/10 text-rose-400 px-1.5 py-0.5 rounded border border-rose-500/20">High Impact</span>
+                </div>
+                <div class="space-y-1">
+                    ${topRisks.map((n, i) => `
+                    <button onclick="focusNode('${n.id}')" class="w-full group flex items-center justify-between p-2 rounded-lg hover:bg-white/5 transition-all text-left border border-transparent hover:border-white/5">
+                        <div class="flex items-center min-w-0 gap-3">
+                            <span class="text-xs font-mono text-zinc-500 w-4 text-center">${i + 1}</span>
+                            <span class="text-sm font-medium text-zinc-300 truncate group-hover:text-white transition-colors" title="${n.id}">
+                                ${path.basename(n.id)}
+                            </span>
                         </div>
-                        <span class="text-xs font-mono text-muted-foreground bg-secondary px-1.5 py-0.5 rounded text-[10px]">${n.blastRadius.toFixed(0)}%</span>
-                    </div>
+                        <div class="flex items-center gap-2">
+                             <div class="h-1.5 w-12 bg-zinc-800 rounded-full overflow-hidden">
+                                <div class="h-full bg-rose-500" style="width: ${Math.min(n.blastRadius, 100)}%"></div>
+                             </div>
+                            <span class="text-xs font-mono text-rose-400 opacity-80 group-hover:opacity-100">${n.blastRadius.toFixed(0)}%</span>
+                        </div>
+                    </button>
                     `).join('')}
                 </div>
             </div>
 
-            <!-- Git Evolution Section -->
+            <!-- Git Evolution (Conditional) -->
             ${gitStats ? `
             <div class="border-t border-border pt-4">
-                <h3 class="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 px-1">Project Evolution</h3>
-                <div class="space-y-3">
-                    <div class="flex justify-between items-center text-sm px-1">
-                        <span class="text-muted-foreground">Total Commits</span>
-                        <span class="font-mono font-medium text-white">${gitStats.totalCommits}</span>
+                 <div class="flex items-center justify-between mb-3 px-1">
+                    <h3 class="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Git Evolution</h3>
+                    <span class="text-[10px] bg-blue-500/10 text-blue-400 px-1.5 py-0.5 rounded border border-blue-500/20">Active</span>
+                </div>
+                
+                <div class="glass rounded-xl p-4 space-y-4">
+                    <div class="flex justify-between items-end">
+                        <div class="text-sm text-zinc-400">Total Commits</div>
+                        <div class="text-xl font-bold font-mono text-white">${gitStats.totalCommits}</div>
                     </div>
-                    <div class="flex justify-between items-center text-sm px-1">
-                        <span class="text-muted-foreground">Contributors</span>
-                        <span class="font-mono font-medium text-white">${gitStats.authroStats.length}</span>
+                     <div class="flex justify-between items-end">
+                        <div class="text-sm text-zinc-400">Contributors</div>
+                        <div class="text-xl font-bold font-mono text-white">${gitStats.authroStats.length}</div>
                     </div>
-                    <div class="mt-2 space-y-1">
-                        <div class="text-[10px] text-muted-foreground px-1 mb-1">Top Contributors</div>
-                        ${gitStats.authroStats.slice(0, 3).map((a: any) => `
-                        <div class="flex justify-between items-center px-1 text-xs">
-                           <span class="truncate max-w-[120px]" title="${a.email}">${a.name}</span>
-                           <span class="text-muted-foreground">${a.commits}</span>
-                        </div>
-                        `).join('')}
+                    
+                    <div class="pt-2 border-t border-white/5 space-y-2">
+                         <div class="text-[10px] text-zinc-500 uppercase tracking-wider">Top Contributors</div>
+                         ${gitStats.authroStats.slice(0, 3).map((a: any) => `
+                            <div class="flex items-center justify-between text-xs">
+                                <span class="text-zinc-300 truncate max-w-[140px]">${a.name}</span>
+                                <span class="font-mono text-zinc-500 bg-zinc-800/50 px-1.5 rounded">${a.commits}</span>
+                            </div>
+                         `).join('')}
                     </div>
                 </div>
             </div>
             ` : ''}
 
-            <!-- Node Details Panel (Dynamic) -->
-            <div id="node-details" class="hidden animate-in slide-in-from-left-4 fade-in duration-200">
-                <div class="border-t border-border my-4"></div>
-                <h3 class="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 px-1">Selection Details</h3>
-                
-                <div class="bg-card border border-border rounded-xl overflow-hidden shadow-sm">
-                    <div class="p-3 bg-secondary/30 border-b border-border">
-                        <h2 id="detail-name" class="text-sm font-semibold break-all text-white"></h2>
-                    </div>
-                    <div class="p-3 space-y-3">
-                        <div class="flex justify-between items-center text-sm">
-                            <span class="text-muted-foreground">Impact Score</span>
-                            <span class="font-mono font-medium text-white" id="detail-blast"></span>
-                        </div>
-                        <div class="flex justify-between items-center text-sm">
-                            <span class="text-muted-foreground">Affected Files</span>
-                            <span class="font-mono font-medium text-white" id="detail-affected"></span>
-                        </div>
-                         <div class="flex justify-between items-center text-sm">
-                            <span class="text-muted-foreground">Dependencies</span>
-                            <span class="font-mono font-medium text-white" id="detail-out"></span>
-                        </div>
-                    </div>
+        </div>
+        
+        <!-- Footer -->
+        <div class="p-4 border-t border-border bg-surface/30">
+             <p class="text-[10px] text-center text-zinc-600">Generated on ${new Date().toLocaleDateString()}</p>
+        </div>
+    </aside>
+
+    <!-- RIGHT CONTENT: Visualization -->
+    <main class="flex-1 relative h-full bg-[#050505] overflow-hidden">
+        
+        <!-- Toolbar Overlay -->
+        <div class="absolute top-4 left-4 right-4 z-10 flex justify-between pointer-events-none">
+            <!-- Search Bar -->
+            <div class="pointer-events-auto w-96 relative group">
+                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <svg class="h-4 w-4 text-zinc-500 group-focus-within:text-blue-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                </div>
+                <input type="text" id="search-input" 
+                       class="glass w-full pl-10 pr-4 py-2.5 rounded-xl text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-all shadow-lg shadow-black/50"
+                       placeholder="Search file or component..."
+                       onkeydown="if(event.key === 'Enter') searchNodes()">
+                <div class="absolute right-2 top-2">
+                     <kbd class="hidden sm:inline-block px-1.5 h-5 text-[10px] leading-5 font-mono font-medium text-zinc-500 bg-zinc-800 rounded border border-zinc-700">Enter</kbd>
                 </div>
             </div>
-        </div>
 
-        <div class="p-4 border-t border-border text-center">
-            <p class="text-[10px] text-muted-foreground">Generated by Projectify 2.0</p>
-        </div>
-    </div>
-
-    <!-- Main Content -->
-    <div class="flex-1 relative bg-background">
-        <!-- Toolbar -->
-        <div class="absolute top-4 left-4 right-4 z-10 flex justify-between pointer-events-none">
-            <!-- Search -->
-            <div class="pointer-events-auto bg-card/80 backdrop-blur-md border border-border shadow-lg rounded-lg p-1.5 flex items-center w-80 transition-all focus-within:ring-2 focus-within:ring-white/20">
-                <svg class="w-4 h-4 ml-2 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-                <input type="text" id="search-input" 
-                       class="bg-transparent border-none outline-none text-sm ml-2 w-full text-foreground placeholder:text-muted-foreground"
-                       placeholder="Search components..." 
-                       onkeydown="if(event.key === 'Enter') searchNodes()">
-            </div>
-
-            <!-- Actions -->
+            <!-- Controls -->
             <div class="pointer-events-auto flex items-center gap-2">
-                <button id="physics-btn" onclick="togglePhysics()" class="h-9 px-4 rounded-md bg-secondary text-secondary-foreground hover:bg-secondary/80 text-sm font-medium transition-colors shadow-sm border border-border">
-                    Running...
+                <button id="physics-btn" onclick="togglePhysics()" class="glass px-4 py-2.5 rounded-xl text-xs font-medium text-zinc-300 hover:text-white hover:bg-white/10 transition-colors flex items-center gap-2 shadow-lg">
+                    <span class="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" id="physics-indicator"></span>
+                    <span id="physics-text">Simulating</span>
                 </button>
-                <button onclick="network.fit()" class="h-9 w-9 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 flex items-center justify-center shadow-md transition-transform active:scale-95">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path></svg>
+                 <button onclick="network.fit({animation: {duration: 800}})" class="glass p-2.5 rounded-xl text-zinc-300 hover:text-white hover:bg-white/10 transition-colors shadow-lg" title="Reset View">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                    </svg>
                 </button>
             </div>
         </div>
 
-        <div id="network" class="w-full h-full"></div>
-    </div>
+        <!-- Vis.js Network Container -->
+        <div id="network" class="w-full h-full cursor-grab active:cursor-grabbing"></div>
+
+        <!-- Floating Detail Panel (Right Side) -->
+        <div id="node-details" class="absolute top-20 right-4 w-80 glass rounded-2xl p-0 shadow-2xl translate-x-[120%] transition-transform duration-300 ease-spring z-20 overflow-hidden">
+             <div class="p-4 border-b border-white/5 bg-white/5 flex justify-between items-start">
+                 <div>
+                    <h3 class="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-0.5">Component Details</h3>
+                    <p id="detail-name" class="text-sm font-semibold text-white break-all leading-tight"></p>
+                 </div>
+                 <button onclick="hideDetails()" class="text-zinc-500 hover:text-white transition-colors">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                 </button>
+             </div>
+             
+             <div class="p-4 space-y-4">
+                 <!-- Metrics -->
+                 <div class="grid grid-cols-2 gap-2">
+                     <div class="bg-black/20 rounded-lg p-2 text-center border border-white/5">
+                        <div class="text-[10px] text-zinc-500 uppercase">Impact Score</div>
+                        <div id="detail-blast" class="text-lg font-mono font-bold text-rose-400">--</div>
+                     </div>
+                      <div class="bg-black/20 rounded-lg p-2 text-center border border-white/5">
+                        <div class="text-[10px] text-zinc-500 uppercase">Affected</div>
+                        <div id="detail-affected" class="text-lg font-mono font-bold text-amber-400">--</div>
+                     </div>
+                 </div>
+
+                 <!-- Dependencies Info -->
+                 <div class="space-y-2">
+                    <div class="flex justify-between text-xs px-1">
+                        <span class="text-zinc-400">Dependencies (Imports)</span>
+                        <span id="detail-in" class="text-white font-mono">0</span>
+                    </div>
+                    <div class="h-1 w-full bg-zinc-800 rounded-full overflow-hidden">
+                        <div id="bar-in" class="h-full bg-blue-500 w-0 transition-all duration-500"></div>
+                    </div>
+                    
+                    <div class="flex justify-between text-xs px-1 mt-3">
+                        <span class="text-zinc-400">Dependents (Imported By)</span>
+                        <span id="detail-out" class="text-white font-mono">0</span>
+                    </div>
+                     <div class="h-1 w-full bg-zinc-800 rounded-full overflow-hidden">
+                        <div id="bar-out" class="h-full bg-violet-500 w-0 transition-all duration-500"></div>
+                    </div>
+                 </div>
+             </div>
+             
+             <div class="p-3 bg-white/5 border-t border-white/5">
+                <button class="w-full py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-medium text-white transition-colors">
+                    View Source Analysis
+                </button>
+             </div>
+        </div>
+    </main>
 
     <script>
         const nodesData = ${JSON.stringify(nodes)};
         const edgesData = ${JSON.stringify(edges)};
         
+        // --- Vis.js Setup ---
         const nodes = new vis.DataSet(nodesData);
         const edges = new vis.DataSet(edgesData);
-
         const container = document.getElementById('network');
+        
         const data = { nodes: nodes, edges: edges };
         const options = {
             nodes: {
-                shape: 'dot',
-                font: { color: '#fafafa', face: 'Inter', size: 14, strokeWidth: 0, vadjust: -30 }, // Labels below
                 borderWidth: 0,
-                shadow: { enabled: true, color: 'rgba(0,0,0,0.5)', size: 10, x: 0, y: 5 },
-                scaling: {
-                    min: 10, max: 30,
-                    label: { enabled: true, min: 14, max: 14 } // Consistent font
-                }
+                shadow: true,
+                font: { face: 'Inter', size: 12, strokeWidth: 4, strokeColor: '#09090b' }
             },
             edges: {
                 width: 1,
-                smooth: { type: 'continuous', roundness: 0.5 },
-                color: { inherit: 'from', opacity: 0.5 }
+                smooth: { type: 'continuous', roundness: 0.3 },
+                selectionWidth: 2,
+                hoverWidth: 0
             },
             physics: {
-                stabilization: {
-                    enabled: true,
-                    iterations: 2000,
-                    updateInterval: 50,
+                forceAtlas2Based: {
+                    gravitationalConstant: -26,
+                    centralGravity: 0.005,
+                    springLength: 230,
+                    springConstant: 0.18
                 },
-                barnesHut: {
-                    gravitationalConstant: -30000,
-                    centralGravity: 0.1,
-                    springLength: 200,
-                    springConstant: 0.02,
-                    damping: 0.3,
-                    avoidOverlap: 0.5
-                },
-                minVelocity: 0.75
+                maxVelocity: 146,
+                solver: 'forceAtlas2Based',
+                timestep: 0.35,
+                stabilization: { enabled: true, iterations: 1000 }
             },
             interaction: {
                 hover: true,
-                tooltipDelay: 100,
+                tooltipDelay: 200,
                 hideEdgesOnDrag: true,
-                dragNodes: true,
-                navigationButtons: false, 
-                keyboard: true,
                 zoomView: true
             }
         };
 
         const network = new vis.Network(container, data, options);
+
+        // --- Physics Controls ---
+        let isSimulating = true;
         
-        // Physics Logic
-        let isStable = false;
         network.on("stabilizationIterationsDone", function () {
-            network.setOptions( { physics: false } );
-            document.getElementById('physics-btn').innerText = 'Paused';
-            document.getElementById('physics-btn').classList.add('opacity-70');
-            isStable = true;
+            stopPhysics();
         });
 
         network.on("dragStart", function () {
-            if (isStable) { // Auto-resume on drag
-                 network.setOptions( { physics: true } );
-                 document.getElementById('physics-btn').innerText = 'Running...';
-                 document.getElementById('physics-btn').classList.remove('opacity-70');
-            }
+            if (!isSimulating) startPhysics();
         });
 
         function togglePhysics() {
-            const btn = document.getElementById('physics-btn');
-            const isRunning = btn.innerText.includes('Running');
-            
-            if (isRunning) {
-                network.setOptions( { physics: false } );
-                btn.innerText = 'Paused';
-                btn.classList.add('opacity-70');
-            } else {
-                network.setOptions( { physics: true } );
-                btn.innerText = 'Running...';
-                btn.classList.remove('opacity-70');
-            }
+            if (isSimulating) stopPhysics();
+            else startPhysics();
         }
 
-        // Interaction Logic
+        function startPhysics() {
+            network.setOptions({ physics: { enabled: true } });
+            isSimulating = true;
+            document.getElementById('physics-text').innerText = 'Simulating';
+            document.getElementById('physics-indicator').className = 'w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse';
+            document.getElementById('physics-indicator').style.backgroundColor = '#22c55e';
+        }
+
+        function stopPhysics() {
+            network.setOptions({ physics: { enabled: false } });
+            isSimulating = false;
+            document.getElementById('physics-text').innerText = 'Paused';
+            document.getElementById('physics-indicator').className = 'w-1.5 h-1.5 rounded-full bg-zinc-500';
+            document.getElementById('physics-indicator').style.backgroundColor = '#71717a';
+        }
+
+        // --- Interaction & Details Panel ---
+        const detailsPanel = document.getElementById('node-details');
+        
         network.on("click", function (params) {
             if (params.nodes.length > 0) {
                 const nodeId = params.nodes[0];
                 const node = nodes.get(nodeId);
                 showDetails(node);
-            } else {
-                document.getElementById('node-details').classList.add('hidden');
+            } else if (params.edges.length === 0) {
+                hideDetails();
             }
         });
 
         function showDetails(node) {
-            const el = document.getElementById('node-details');
-            el.classList.remove('hidden');
-            
+            // Populate Data
             document.getElementById('detail-name').innerText = node.label;
-            document.getElementById('detail-name').title = node.label;
             document.getElementById('detail-blast').innerText = node.data.blastRadius + '%';
             document.getElementById('detail-affected').innerText = node.data.affectedFiles;
-            document.getElementById('detail-out').innerText = node.data.outDegree; 
+            
+            document.getElementById('detail-in').innerText = node.data.inDegree;
+            document.getElementById('detail-out').innerText = node.data.outDegree;
+            
+            // Animate Bars (Visual flair)
+            setTimeout(() => {
+                const max = 20; // Arbitrary max for bar scale
+                const inPct = Math.min((node.data.inDegree / max) * 100, 100);
+                const outPct = Math.min((node.data.outDegree / max) * 100, 100);
+                document.getElementById('bar-in').style.width = inPct + '%';
+                document.getElementById('bar-out').style.width = outPct + '%';
+            }, 100);
+
+            // Show Panel
+            detailsPanel.classList.remove('translate-x-[120%]');
+        }
+
+        function hideDetails() {
+            detailsPanel.classList.add('translate-x-[120%]');
+             network.unselectAll();
         }
 
         function focusNode(nodeId) {
             network.focus(nodeId, {
-                scale: 1.5,
-                animation: { duration: 1000, easingFunction: 'easeInOutQuad' }
+                scale: 1.2,
+                animation: { duration: 1000, easingFunction: 'easeInOutQuart' }
             });
+            network.selectNodes([nodeId]);
             const node = nodes.get(nodeId);
             showDetails(node);
-            network.selectNodes([nodeId]);
         }
-        
+
         function searchNodes() {
             const query = document.getElementById('search-input').value.toLowerCase();
             if (!query) return;
@@ -354,16 +448,18 @@ export async function generateHtmlReport(
             if (found) {
                 focusNode(found.id);
             } else {
-                // Shake effect on input
-                const imp = document.getElementById('search-input').parentElement;
-                imp.classList.add('ring-2', 'ring-red-500');
-                setTimeout(() => imp.classList.remove('ring-2', 'ring-red-500'), 500);
+                // Shake Animation
+                const input = document.getElementById('search-input');
+                input.classList.add('ring-2', 'ring-rose-500', 'translate-x-1');
+                setTimeout(() => input.classList.remove('translate-x-1'), 100);
+                setTimeout(() => input.classList.add('-translate-x-1'), 200);
+                setTimeout(() => input.classList.remove('ring-2', 'ring-rose-500', '-translate-x-1'), 300);
             }
         }
     </script>
 </body>
 </html>
-  `;
+    `;
 
     await fs.writeFile(outputPath, html);
 }
