@@ -4,9 +4,17 @@
   "description": "Project Analyzer using LangChain",
   "main": "dist/index.js",
   "bin": {
-    "projectify": "./dist/index.js"
+    "projectify": "dist/index.js"
   },
+  "files": [
+    "dist",
+    "package.json",
+    "README.md",
+    "graph.png",
+    "functions.png"
+  ],
   "scripts": {
+    "prepublishOnly": "npm run build",
     "build": "tsc && echo '#!/usr/bin/env node' | cat - dist/index.js > dist/index.js.tmp && mv dist/index.js.tmp dist/index.js && chmod +x dist/index.js",
     "start": "node dist/index.js",
     "test": "jest",
@@ -27,11 +35,13 @@
     "@langchain/langgraph": "^1.0.7",
     "@langchain/ollama": "^1.1.0",
     "@langchain/openai": "^0.0.28",
+    "@types/inquirer": "^8.2.12",
     "chalk": "^4.1.2",
     "commander": "^11.1.0",
     "fast-glob": "^3.3.2",
     "fs-extra": "^11.2.0",
     "graphology": "^0.25.4",
+    "inquirer": "^8.2.7",
     "langchain": "^0.1.36",
     "ora": "^5.4.1",
     "simple-git": "^3.30.0",

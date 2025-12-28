@@ -1,4 +1,5 @@
 import { Command } from 'commander';
+import inquirer = require('inquirer');
 import chalk from 'chalk';
 import path from 'path';
 import fs from 'fs-extra';
@@ -19,7 +20,7 @@ program
     .argument('[path]', 'Project path to analyze', '.')
     .option('--no-ai', 'Skip AI analysis')
     .option('--summary', 'Generate full project summary')
-    .option('--provider <type>', 'AI Provider (openai, gemini, ollama)', 'openai')
+    .option('--provider <type>', 'AI Provider (openai, gemini, ollama)')
     .option('--model <name>', 'Model name (optional)')
     .action(async (projectPath, options) => {
         try {
@@ -62,15 +63,85 @@ program
             let gitInsight = '';
 
             if (options.ai) {
-                const providerType = options.provider as AiProviderType;
+                let providerType = options.provider as AiProviderType;
+
+                // Interactive Provider Selection
+                if (!providerType) {
+                    const answer = await inquirer.prompt([
+                        {
+                            type: 'list',
+                            name: 'provider',
+                            message: 'Select AI Provider for analysis:',
+                            choices: ['openai', 'gemini', 'ollama']
+                        }
+                    ]);
+                    providerType = answer.provider;
+                }
+
+                // Interactive Model Selection
+                if (!options.model) {
+                    let modelChoices: string[] = [];
+                    if (providerType === 'openai') {
+                        modelChoices = ['gpt-4o', 'gpt-5.2', 'gpt-4.1'];
+                    } else if (providerType === 'gemini') {
+                        modelChoices = ['gemini-3-pro-preview', 'gemini-3-flash-preview'];
+                    }
+
+                    if (modelChoices.length > 0) {
+                        const answer = await inquirer.prompt([
+                            {
+                                type: 'list',
+                                name: 'model',
+                                message: `Select ${providerType} Model:`,
+                                choices: modelChoices
+                            }
+                        ]);
+                        options.model = answer.model;
+                    } else if (providerType === 'ollama') {
+                        const answer = await inquirer.prompt([
+                            {
+                                type: 'input',
+                                name: 'model',
+                                message: 'Enter Ollama Model Name (e.g., llama3):',
+                                default: 'llama3'
+                            }
+                        ]);
+                        options.model = answer.model;
+                    }
+                }
+
                 let apiKey = '';
 
                 if (providerType === 'openai') {
                     apiKey = process.env.OPENAI_API_KEY || '';
-                    if (!apiKey) console.log(chalk.red('\n⚠️  OPENAI_API_KEY not found.'));
+                    if (!apiKey) {
+                        const answer = await inquirer.prompt([
+                            {
+                                type: 'password',
+                                name: 'apiKey',
+                                message: 'Enter OpenAI API Key:',
+                                mask: '*'
+                            }
+                        ]);
+                        apiKey = answer.apiKey;
+                    }
                 } else if (providerType === 'gemini') {
                     apiKey = process.env.GEMINI_API_KEY || '';
-                    if (!apiKey) console.log(chalk.red('\n⚠️  GEMINI_API_KEY not found.'));
+                    if (!apiKey) {
+                        const answer = await inquirer.prompt([
+                            {
+                                type: 'password',
+                                name: 'apiKey',
+                                message: 'Enter Gemini API Key:',
+                                mask: '*'
+                            }
+                        ]);
+                        apiKey = answer.apiKey;
+                    }
+                }
+
+                if (!apiKey && providerType !== 'ollama') {
+                    console.log(chalk.red('\n⚠️  API Key is required for this provider.'));
                 }
 
                 if ((providerType === 'ollama') || apiKey) {

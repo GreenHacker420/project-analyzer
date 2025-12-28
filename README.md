@@ -33,36 +33,30 @@ npm run build
 
 ## Usage
 
-### Using npx (Recommended)
-
-Run directly without installing:
+### 1. Interactive Mode (Recommended)
+Simply run the CLI without arguments to launch the interactive setup wizard. It will guide you through provider selection (OpenAI, Gemini, Ollama) and API key entry.
 
 ```bash
-npx projectify-cli [path] [options]
+# Using npx
+npx projectify-cli
+
+# Or if installed globally
+projectify
 ```
 
-### Global Installation
+### 2. Manual / CI Mode
+Run non-interactively by passing arguments:
 
 ```bash
-npm install -g projectify-cli
+# Basic Analysis (No AI)
+projectify . --no-ai
 
-# Run anywhere
-projectify [path] [options]
-```
+# With auto-detected environment variables
+export GEMINI_API_KEY=...
+projectify . --provider gemini
 
-### Local Development
-
-Run the analyzer on any project directory:
-
-```bash
-# Basic Analysis
-npm start -- /path/to/target/project
-
-# Analysis with AI Summary (Requires API Key)
-export OPENAI_API_KEY=sk-your-key-here
-export GEMINI_API_KEY=sk-your-key-here
-export OLLAMA_API_KEY=sk-your-key-here
-npm start -- /path/to/target/project --summary
+# Force specific provider
+projectify . --provider ollama --model llama3
 ```
 
 ### CLI Options
