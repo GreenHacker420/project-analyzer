@@ -4,10 +4,18 @@ import traverse from '@babel/traverse';
 import * as t from '@babel/types';
 import path from 'path';
 
+export interface FunctionInfo {
+    name: string;
+    line: number;
+    params: string[];
+    doc?: string;
+    code?: string;
+}
+
 export interface FileAnalysis {
     imports: string[];
     exports: string[];
-    functions: string[];
+    functions: FunctionInfo[];
     classes: string[];
 }
 
@@ -23,9 +31,10 @@ export function parseJS(content: string, filePath: string): FileAnalysis {
         const isTs = filePath.endsWith('.ts') || filePath.endsWith('.tsx');
         const ast = parse(content, {
             sourceType: 'module',
-            errorRecovery: true, // Continue parsing even if errors found
+            errorRecovery: true,
             plugins: [
                 'jsx',
+                'typescript',
                 'asyncGenerators',
                 'bigInt',
                 'classProperties',
@@ -45,8 +54,7 @@ export function parseJS(content: string, filePath: string): FileAnalysis {
                 'objectRestSpread',
                 'optionalCatchBinding',
                 'optionalChaining',
-                'partialApplication',
-                ...(isTs ? ['typescript' as const] : [])
+                'partialApplication'
             ]
         });
 
@@ -70,8 +78,28 @@ export function parseJS(content: string, filePath: string): FileAnalysis {
                 }
             },
             FunctionDeclaration(path) {
-                if (path.node.id) {
-                    analysis.functions.push(path.node.id.name);
+                if (path.node.id && path.node.loc) {
+                    const start = path.node.loc.start.line - 1;
+                    const end = path.node.loc.end.line;
+                    const code = content.split('\n').slice(start, end).join('\n');
+
+                    const params = path.node.params.map(p => {
+                        if (t.isIdentifier(p)) return p.name;
+                        if (t.isAssignmentPattern(p) && t.isIdentifier(p.left)) return p.left.name;
+                        return 'arg';
+                    });
+
+                    const doc = path.node.leadingComments
+                        ? path.node.leadingComments.map(c => c.value.trim()).join('\n')
+                        : undefined;
+
+                    analysis.functions.push({
+                        name: path.node.id.name,
+                        line: path.node.loc.start.line,
+                        params: params,
+                        doc: doc,
+                        code: code
+                    });
                 }
             },
             ClassDeclaration(path) {
@@ -80,6 +108,7 @@ export function parseJS(content: string, filePath: string): FileAnalysis {
                 }
             }
         });
+
     } catch (error: any) {
         console.warn(`⚠️  Parser warning in ${path.basename(filePath)}: ${error.message?.split('\n')[0]}`);
     }

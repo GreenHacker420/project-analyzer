@@ -2,7 +2,7 @@
 import { ChatOpenAI } from "@langchain/openai";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { ChatOllama } from "@langchain/ollama";
-import { createAgent } from "langchain";
+import { createReactAgent } from "@langchain/langgraph/prebuilt";
 import { MemorySaver } from "@langchain/langgraph";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { GraphNode } from '../graph';
@@ -45,10 +45,10 @@ export class CodeIntelligence {
         const checkpointer = new MemorySaver();
 
         // Create Agent
-        this.agent = createAgent({
-            model: model as any,
+        this.agent = createReactAgent({
+            llm: model as any,
             tools: [],
-            checkpointer: checkpointer as any
+            checkpointSaver: checkpointer as any
         });
 
         // Config for thread persistence

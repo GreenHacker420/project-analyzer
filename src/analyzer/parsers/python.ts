@@ -17,7 +17,7 @@ export function parsePython(content: string, filePath: string): FileAnalysis {
     const classRegex = /^\s*class\s+([a-zA-Z_]\w*)/;
     const assignRegex = /^([a-zA-Z_]\w*)\s*=/; // Global assignments
 
-    lines.forEach(line => {
+    lines.forEach((line, index) => {
         // Imports
         const importMatch = line.match(importRegex);
         if (importMatch) {
@@ -27,7 +27,13 @@ export function parsePython(content: string, filePath: string): FileAnalysis {
         // Functions
         const defMatch = line.match(defRegex);
         if (defMatch) {
-            analysis.functions.push(defMatch[1]);
+            analysis.functions.push({
+                name: defMatch[1],
+                line: index + 1,
+                params: [], // Regex parser doesn't extract params yet
+                doc: undefined,
+                code: undefined
+            });
             // Python functions at module level are exports
             analysis.exports.push(defMatch[1]);
         }

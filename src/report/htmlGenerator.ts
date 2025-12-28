@@ -4,6 +4,14 @@ import path from 'path';
 import { ProjectAnalysis } from '../analyzer';
 import { DependencyGraph } from '../graph';
 
+// Helper to escape JSON for HTML injection
+const safeJSON = (data: any) => {
+    return JSON.stringify(data)
+        .replace(/</g, '\\u003c')
+        .replace(/>/g, '\\u003e')
+        .replace(/&/g, '\\u0026');
+};
+
 export async function generateHtmlReport(
     projectPath: string,
     analysis: ProjectAnalysis,
@@ -18,27 +26,35 @@ export async function generateHtmlReport(
 
     // Calculate node sizes and colors
     graph.getNodes().forEach(node => {
-        let color = '#60a5fa'; // Blue-400 (Default)
+        let color = '#22d3ee'; // Cyan-400 (Default)
         let size = 20;
         let shape = 'dot';
+        let shadowColor = 'rgba(34, 211, 238, 0.4)';
 
         if (topRiskIds.has(node.id)) {
-            color = '#f43f5e'; // Rose-500 (High Risk)
+            color = '#f472b6'; // Pink-400 (High Risk)
+            shadowColor = 'rgba(244, 114, 182, 0.6)';
             size = 35 + (node.blastRadius / 2);
-            shape = 'hexagon';
+            shape = 'diamond';
         } else if (node.affectedFiles > 5) {
-            color = '#fbbf24'; // Amber-400 (Medium Risk)
+            color = '#818cf8'; // Indigo-400 (Medium)
+            shadowColor = 'rgba(129, 140, 248, 0.5)';
             size = 25;
         }
 
         nodes.push({
             id: node.id,
             label: path.basename(node.id),
-            title: node.id, // Tooltip
+            title: undefined,
             value: size,
-            color: { background: color, border: '#ffffff' },
+            color: {
+                background: color,
+                border: '#ffffff',
+                highlight: { background: '#ffffff', border: color }
+            },
             shape: shape,
-            font: { color: '#e4e4e7' }, // Zinc-200
+            font: { color: '#a5f3fc', face: 'JetBrains Mono', strokeWidth: 0, size: 14 },
+            shadow: { enabled: true, color: shadowColor, size: 15, x: 0, y: 0 },
             data: {
                 fullPath: node.id,
                 blastRadius: node.blastRadius.toFixed(2),
@@ -55,9 +71,37 @@ export async function generateHtmlReport(
                 from: source,
                 to: target,
                 arrows: 'to',
-                color: { color: '#52525b', opacity: 0.4 }, // Zinc-600
-                dashes: false
+                color: { color: '#1e293b', opacity: 0.2, highlight: '#38bdf8' }, // Slate-800
+                dashes: false,
+                width: 1
             });
+        });
+    });
+
+    // Aggregate functions for the view
+    const functionsList: any[] = [];
+    Object.entries(analysis.files).forEach(([file, data]) => {
+        data.functions.forEach((fn: any) => {
+            // Handle both old (string) and new (FunctionInfo) formats safely
+            if (typeof fn === 'object') {
+                functionsList.push({
+                    name: fn.name,
+                    line: fn.line,
+                    file: file,
+                    params: fn.params || [],
+                    doc: fn.doc || '',
+                    code: fn.code || ''
+                });
+            } else {
+                functionsList.push({
+                    name: fn,
+                    line: 0,
+                    file: file,
+                    params: [],
+                    doc: '',
+                    code: ''
+                });
+            }
         });
     });
 
@@ -67,8 +111,7 @@ export async function generateHtmlReport(
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Projectify Analysis Report</title>
-    <!-- Tailwind CSS (via CDN) -->
+    <title>Projetify</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -80,362 +123,391 @@ export async function generateHtmlReport(
                         mono: ['JetBrains Mono', 'monospace'],
                     },
                     colors: {
-                        background: '#09090b', // zinc-950
-                        surface: '#18181b',    // zinc-900
-                        primary: '#3b82f6',    // blue-500
-                        accent: '#f43f5e',     // rose-500
-                        border: '#27272a',     // zinc-800
+                        background: '#000000',
+                        surface: '#0a0a0a',
+                        primary: '#22d3ee',   // cyan-400
+                        secondary: '#818cf8', // indigo-400
+                        accent: '#f472b6',    // pink-400
                     }
                 }
             }
         }
     </script>
-    <!-- VS Code Icons (via CDN for file icons if needed, or simplified) -->
-    
-    <!-- Vis.js -->
     <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
-    
-    <!-- Google Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/prism.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/themes/prism-tomorrow.min.css" rel="stylesheet" />
 
     <style>
         body { 
-            background-color: #09090b; 
-            color: #fafafa;
-            overflow: hidden; /* Prevent body scroll */
+            background-color: #000000; 
+            color: #ecfeff;
+            overflow: hidden;
+            background-image: radial-gradient(circle at 50% 50%, #111827 0%, #000000 100%);
         }
         
         .glass {
-            background: rgba(24, 24, 27, 0.7);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.05);
+            background: rgba(10, 10, 10, 0.6);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
         }
 
-        .scrollbar-hide::-webkit-scrollbar {
-            display: none;
+        .neon-text {
+            text-shadow: 0 0 10px rgba(34, 211, 238, 0.5);
         }
-
-        /* Custom Scrollbar for sidebars */
-        .custom-scroll::-webkit-scrollbar { width: 6px; }
-        .custom-scroll::-webkit-scrollbar-track { background: transparent; }
-        .custom-scroll::-webkit-scrollbar-thumb { background: #27272a; border-radius: 3px; }
-        .custom-scroll::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
 
         .vis-network { outline: none; }
         
-        .animate-fade-in { animation: fadeIn 0.3s ease-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 2px; }
+        
+        /* Navigation Tabs */
+        .nav-tab {
+            position: relative;
+            color: #94a3b8;
+            transition: color 0.2s;
+        }
+        .nav-tab.active {
+            color: #fff;
+            font-weight: 600;
+        }
+        .nav-tab.active::after {
+            content: '';
+            position: absolute;
+            bottom: -18px;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: #a855f7; /* Purple */
+            box-shadow: 0 0 10px #a855f7;
+        }
+
+        /* Snap Button */
+        .snap-btn {
+            background: rgba(20, 20, 20, 0.8);
+            border: 1px solid rgba(255,255,255,0.1);
+            backdrop-filter: blur(4px);
+            color: #94a3b8;
+            border-radius: 16px;
+            transition: all 0.2s;
+        }
+        .snap-btn:hover {
+            color: #fff;
+            border-color: rgba(255,255,255,0.3);
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+
+        /* Custom Tooltip */
+        #custom-tooltip {
+            pointer-events: none;
+            z-index: 100;
+            transition: opacity 0.1s;
+        }
+
+        /* Code Block Styling */
+        pre[class*="language-"] {
+            background: #0f172a !important;
+            border-radius: 8px;
+            border: 1px solid #1e293b;
+            margin: 0;
+        }
     </style>
 </head>
-<body class="flex h-screen font-sans antialiased text-zinc-100 bg-background selection:bg-primary/30">
+<body class="flex flex-col h-screen font-sans selection:bg-primary/30 selection:text-white">
 
-    <!-- LEFT SIDEBAR: Navigation & Stats -->
-    <aside class="w-80 flex-shrink-0 border-r border-border bg-surface/50 h-full flex flex-col z-20">
-        <!-- Brand -->
-        <div class="h-16 flex items-center px-6 border-b border-border">
-            <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-violet-600 flex items-center justify-center text-white font-bold text-lg shadow-lg shadow-blue-500/20 mr-3">P</div>
-            <div>
-                <h1 class="font-bold text-lg tracking-tight">Projectify</h1>
-                <p class="text-[10px] text-zinc-500 font-medium uppercase tracking-wider">Analysis Report</p>
+    <!-- TOP NAVIGATION -->
+    <nav class="h-16 border-b border-white/5 flex items-center justify-between px-6 bg-black z-50">
+        <!-- Logo & Breadcrumb -->
+        <div class="flex items-center gap-4">
+            <div class="flex items-center gap-2 text-primary font-mono tracking-wider font-bold text-lg neon-text">
+                <span>&gt;</span> Projectify
+            </div>
+            <div class="text-zinc-600 font-light text-sm tracking-widest uppercase flex items-center gap-2">
+                <span>//</span>
+                <span>KNOWLEDGE GRAPH</span>
+            </div>
+            <!-- Navigation Arrows (Static) -->
+            <div class="flex gap-1 ml-4 text-zinc-700">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
             </div>
         </div>
 
-        <!-- Scrollable Content -->
-        <div class="flex-1 overflow-y-auto custom-scroll p-4 space-y-6">
+        <!-- Center Tabs -->
+        <div class="hidden md:flex items-center gap-8 text-sm uppercase tracking-wider">
+            <button class="nav-tab hover:text-white" onclick="switchView('network')">GRAPH</button>
+            <button class="nav-tab active" onclick="switchView('functions')">FUNCTIONS</button>
+            <button class="nav-tab hover:text-white" onclick="switchView('files')">FILES</button>
+        </div>
+
+        <!-- Right Search -->
+        <div class="relative group w-64">
+            <input type="text" id="search-input" 
+                class="w-full bg-zinc-900/50 border border-zinc-800 rounded-full px-4 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/50 transition-all font-mono"
+                placeholder="SEARCH NODE..."
+                onkeydown="if(event.key === 'Enter') searchNodes()">
+            <div class="absolute right-2 top-1.5 text-zinc-600">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+            </div>
+        </div>
+        
+        <div class="ml-4 p-2 rounded border border-zinc-800 text-zinc-500 hover:text-white hover:border-zinc-600 transition-colors cursor-pointer">
+             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+        </div>
+    </nav>
+
+    <!-- CONTENT AREA -->
+    <div class="flex-1 relative overflow-hidden">
+        
+        <!-- GRAPH CONTAINER -->
+        <div id="network-view" class="view-panel absolute inset-0 z-0 cursor-crosshair"></div>
+
+        <!-- FUNCTIONS CONTAINER -->
+        <div id="functions-view" class="view-panel absolute inset-0 z-20 bg-black hidden flex flex-col p-8 overflow-y-auto">
+             <div class="max-w-6xl mx-auto w-full">
+                <h2 class="text-2xl font-mono text-primary mb-6 neon-text">Available Functions</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="functions-grid">
+                    <!-- Functions injected here -->
+                </div>
+            </div>
+        </div>
+        
+        <!-- FILES CONTAINER (Placeholder) -->
+        <div id="files-view" class="view-panel absolute inset-0 z-20 bg-black hidden flex items-center justify-center">
+            <div class="text-zinc-600 font-mono">FILES VIEW UNDER CONSTRUCTION</div>
+        </div>
+
+        <!-- CUSTOM TOOLTIP -->
+        <div id="custom-tooltip" class="fixed hidden p-4 bg-black/90 border border-primary/50 text-xs font-mono rounded shadow-[0_0_20px_rgba(34,211,238,0.2)]">
+            <div id="tooltip-title" class="text-primary font-bold text-sm mb-2"></div>
+            <div class="space-y-1 text-zinc-400">
+                <div class="flex gap-2"><span class="w-16 text-zinc-600">PATH:</span> <span id="tooltip-path" class="text-white"></span></div>
+                <div class="flex gap-2"><span class="w-16 text-zinc-600">FILE:</span> <span id="tooltip-file" class="text-white"></span></div>
+                <div class="flex gap-2"><span class="w-16 text-zinc-600">LINE:</span> <span id="tooltip-line" class="text-accent"></span></div>
+            </div>
+        </div>
+
+        <!-- DETAILS SIDEBAR (Overlay, conditionally hidden) -->
+        <div id="details-panel" class="absolute top-0 right-0 h-full w-[500px] bg-black/95 backdrop-blur-xl border-l border-white/10 transform translate-x-full transition-transform duration-300 z-30 flex flex-col shadow-2xl">
+            <div class="p-6 border-b border-white/10 flex justify-between items-center">
+                <div>
+                     <div class="text-[10px] text-primary tracking-widest uppercase mb-1" id="detail-type">Node Details</div>
+                     <h2 id="detail-title" class="text-lg font-mono font-bold text-white break-all"></h2>
+                </div>
+                <button onclick="closeDetails()" class="text-zinc-500 hover:text-white">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
             
-            <!-- Key Metrics Grid -->
-            <div class="grid grid-cols-2 gap-3">
-                <div class="glass rounded-xl p-3 hover:bg-white/5 transition-colors">
-                    <p class="text-[10px] text-zinc-400 font-medium uppercase mb-1">Total Files</p>
-                    <p class="text-2xl font-bold font-mono">${analysis.fileCount}</p>
-                </div>
-                <div class="glass rounded-xl p-3 hover:bg-white/5 transition-colors">
-                    <p class="text-[10px] text-zinc-400 font-medium uppercase mb-1">Relations</p>
-                    <p class="text-2xl font-bold font-mono">${edges.length}</p>
-                </div>
-            </div>
-
-            <!-- Blast Radius Risks -->
-            <div>
-                <div class="flex items-center justify-between mb-3 px-1">
-                    <h3 class="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Top Risks</h3>
-                    <span class="text-[10px] bg-rose-500/10 text-rose-400 px-1.5 py-0.5 rounded border border-rose-500/20">High Impact</span>
-                </div>
-                <div class="space-y-1">
-                    ${topRisks.map((n, i) => `
-                    <button onclick="focusNode('${n.id}')" class="w-full group flex items-center justify-between p-2 rounded-lg hover:bg-white/5 transition-all text-left border border-transparent hover:border-white/5">
-                        <div class="flex items-center min-w-0 gap-3">
-                            <span class="text-xs font-mono text-zinc-500 w-4 text-center">${i + 1}</span>
-                            <span class="text-sm font-medium text-zinc-300 truncate group-hover:text-white transition-colors" title="${n.id}">
-                                ${path.basename(n.id)}
-                            </span>
-                        </div>
-                        <div class="flex items-center gap-2">
-                             <div class="h-1.5 w-12 bg-zinc-800 rounded-full overflow-hidden">
-                                <div class="h-full bg-rose-500" style="width: ${Math.min(n.blastRadius, 100)}%"></div>
-                             </div>
-                            <span class="text-xs font-mono text-rose-400 opacity-80 group-hover:opacity-100">${n.blastRadius.toFixed(0)}%</span>
-                        </div>
-                    </button>
-                    `).join('')}
-                </div>
-            </div>
-
-            <!-- Git Evolution (Conditional) -->
-            ${gitStats ? `
-            <div class="border-t border-border pt-4">
-                 <div class="flex items-center justify-between mb-3 px-1">
-                    <h3 class="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Git Evolution</h3>
-                    <span class="text-[10px] bg-blue-500/10 text-blue-400 px-1.5 py-0.5 rounded border border-blue-500/20">Active</span>
-                </div>
-                
-                <div class="glass rounded-xl p-4 space-y-4">
-                    <div class="flex justify-between items-end">
-                        <div class="text-sm text-zinc-400">Total Commits</div>
-                        <div class="text-xl font-bold font-mono text-white">${gitStats.totalCommits}</div>
-                    </div>
-                     <div class="flex justify-between items-end">
-                        <div class="text-sm text-zinc-400">Contributors</div>
-                        <div class="text-xl font-bold font-mono text-white">${gitStats.authroStats.length}</div>
-                    </div>
-                    
-                    <div class="pt-2 border-t border-white/5 space-y-2">
-                         <div class="text-[10px] text-zinc-500 uppercase tracking-wider">Top Contributors</div>
-                         ${gitStats.authroStats.slice(0, 3).map((a: any) => `
-                            <div class="flex items-center justify-between text-xs">
-                                <span class="text-zinc-300 truncate max-w-[140px]">${a.name}</span>
-                                <span class="font-mono text-zinc-500 bg-zinc-800/50 px-1.5 rounded">${a.commits}</span>
-                            </div>
-                         `).join('')}
-                    </div>
-                </div>
-            </div>
-            ` : ''}
-
-        </div>
-        
-        <!-- Footer -->
-        <div class="p-4 border-t border-border bg-surface/30">
-             <p class="text-[10px] text-center text-zinc-600">Generated on ${new Date().toLocaleDateString()}</p>
-        </div>
-    </aside>
-
-    <!-- RIGHT CONTENT: Visualization -->
-    <main class="flex-1 relative h-full bg-[#050505] overflow-hidden">
-        
-        <!-- Toolbar Overlay -->
-        <div class="absolute top-4 left-4 right-4 z-10 flex justify-between pointer-events-none">
-            <!-- Search Bar -->
-            <div class="pointer-events-auto w-96 relative group">
-                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <svg class="h-4 w-4 text-zinc-500 group-focus-within:text-blue-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                    </svg>
-                </div>
-                <input type="text" id="search-input" 
-                       class="glass w-full pl-10 pr-4 py-2.5 rounded-xl text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-all shadow-lg shadow-black/50"
-                       placeholder="Search file or component..."
-                       onkeydown="if(event.key === 'Enter') searchNodes()">
-                <div class="absolute right-2 top-2">
-                     <kbd class="hidden sm:inline-block px-1.5 h-5 text-[10px] leading-5 font-mono font-medium text-zinc-500 bg-zinc-800 rounded border border-zinc-700">Enter</kbd>
-                </div>
-            </div>
-
-            <!-- Controls -->
-            <div class="pointer-events-auto flex items-center gap-2">
-                <button id="physics-btn" onclick="togglePhysics()" class="glass px-4 py-2.5 rounded-xl text-xs font-medium text-zinc-300 hover:text-white hover:bg-white/10 transition-colors flex items-center gap-2 shadow-lg">
-                    <span class="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" id="physics-indicator"></span>
-                    <span id="physics-text">Simulating</span>
-                </button>
-                 <button onclick="network.fit({animation: {duration: 800}})" class="glass p-2.5 rounded-xl text-zinc-300 hover:text-white hover:bg-white/10 transition-colors shadow-lg" title="Reset View">
-                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-                    </svg>
-                </button>
+            <div class="p-6 space-y-8 flex-1 overflow-y-auto" id="detail-content">
+                <!-- Content injected dynamically -->
             </div>
         </div>
 
-        <!-- Vis.js Network Container -->
-        <div id="network" class="w-full h-full cursor-grab active:cursor-grabbing"></div>
-
-        <!-- Floating Detail Panel (Right Side) -->
-        <div id="node-details" class="absolute top-20 right-4 w-80 glass rounded-2xl p-0 shadow-2xl translate-x-[120%] transition-transform duration-300 ease-spring z-20 overflow-hidden">
-             <div class="p-4 border-b border-white/5 bg-white/5 flex justify-between items-start">
-                 <div>
-                    <h3 class="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-0.5">Component Details</h3>
-                    <p id="detail-name" class="text-sm font-semibold text-white break-all leading-tight"></p>
-                 </div>
-                 <button onclick="hideDetails()" class="text-zinc-500 hover:text-white transition-colors">
-                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
-                 </button>
-             </div>
-             
-             <div class="p-4 space-y-4">
-                 <!-- Metrics -->
-                 <div class="grid grid-cols-2 gap-2">
-                     <div class="bg-black/20 rounded-lg p-2 text-center border border-white/5">
-                        <div class="text-[10px] text-zinc-500 uppercase">Impact Score</div>
-                        <div id="detail-blast" class="text-lg font-mono font-bold text-rose-400">--</div>
-                     </div>
-                      <div class="bg-black/20 rounded-lg p-2 text-center border border-white/5">
-                        <div class="text-[10px] text-zinc-500 uppercase">Affected</div>
-                        <div id="detail-affected" class="text-lg font-mono font-bold text-amber-400">--</div>
-                     </div>
-                 </div>
-
-                 <!-- Dependencies Info -->
-                 <div class="space-y-2">
-                    <div class="flex justify-between text-xs px-1">
-                        <span class="text-zinc-400">Dependencies (Imports)</span>
-                        <span id="detail-in" class="text-white font-mono">0</span>
-                    </div>
-                    <div class="h-1 w-full bg-zinc-800 rounded-full overflow-hidden">
-                        <div id="bar-in" class="h-full bg-blue-500 w-0 transition-all duration-500"></div>
-                    </div>
-                    
-                    <div class="flex justify-between text-xs px-1 mt-3">
-                        <span class="text-zinc-400">Dependents (Imported By)</span>
-                        <span id="detail-out" class="text-white font-mono">0</span>
-                    </div>
-                     <div class="h-1 w-full bg-zinc-800 rounded-full overflow-hidden">
-                        <div id="bar-out" class="h-full bg-violet-500 w-0 transition-all duration-500"></div>
-                    </div>
-                 </div>
-             </div>
-             
-             <div class="p-3 bg-white/5 border-t border-white/5">
-                <button class="w-full py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-medium text-white transition-colors">
-                    View Source Analysis
-                </button>
-             </div>
+        <!-- BOTTOM CONTROLS (Floating) -->
+        <div class="absolute bottom-8 left-1/2 transform -translate-x-1/2 z-10">
+            <button class="snap-btn py-4 px-6 flex flex-col items-center gap-1 group" onclick="resetView()">
+                 <div class="w-6 h-6 border-2 border-current rounded mb-1 bg-gradient-to-tr from-transparent to-white/10"></div>
+                 <span class="text-[10px] tracking-widest font-bold font-mono">SNAP</span>
+            </button>
         </div>
-    </main>
+
+    </div>
+
+
+    <!-- DATA INJECTION -->
+    <script id="nodes-data" type="application/json">
+        ${safeJSON(nodes)}
+    </script>
+    <script id="edges-data" type="application/json">
+        ${safeJSON(edges)}
+    </script>
+    <script id="functions-data" type="application/json">
+        ${safeJSON(functionsList)}
+    </script>
 
     <script>
-        const nodesData = ${JSON.stringify(nodes)};
-        const edgesData = ${JSON.stringify(edges)};
+        // Safe data retrieval
+        const nodesData = JSON.parse(document.getElementById('nodes-data').textContent);
+        const edgesData = JSON.parse(document.getElementById('edges-data').textContent);
+        const functionsData = JSON.parse(document.getElementById('functions-data').textContent);
         
-        // --- Vis.js Setup ---
         const nodes = new vis.DataSet(nodesData);
         const edges = new vis.DataSet(edgesData);
-        const container = document.getElementById('network');
-        
+
+        const container = document.getElementById('network-view');
         const data = { nodes: nodes, edges: edges };
+        
         const options = {
             nodes: {
                 borderWidth: 0,
                 shadow: true,
-                font: { face: 'Inter', size: 12, strokeWidth: 4, strokeColor: '#09090b' }
+                font: { face: 'JetBrains Mono', size: 12, color: '#a5f3fc', strokeWidth: 0, vadjust: -30 },
+                title: undefined // Disable default title
             },
             edges: {
                 width: 1,
-                smooth: { type: 'continuous', roundness: 0.3 },
-                selectionWidth: 2,
-                hoverWidth: 0
+                smooth: { type: 'continuous', roundness: 0.4 },
+                color: { inherit: false, color: 'rgba(30, 41, 59, 0.4)', highlight: '#38bdf8' },
+                arrows: { to: { enabled: true, scaleFactor: 0.5 } }
             },
             physics: {
                 forceAtlas2Based: {
-                    gravitationalConstant: -26,
+                    gravitationalConstant: -50,
                     centralGravity: 0.005,
-                    springLength: 230,
-                    springConstant: 0.18
+                    springLength: 200,
+                    springConstant: 0.08
                 },
-                maxVelocity: 146,
+                maxVelocity: 50,
                 solver: 'forceAtlas2Based',
                 timestep: 0.35,
                 stabilization: { enabled: true, iterations: 1000 }
             },
             interaction: {
                 hover: true,
-                tooltipDelay: 200,
+                tooltipDelay: 100,
                 hideEdgesOnDrag: true,
+                dragNodes: true,
                 zoomView: true
             }
         };
 
         const network = new vis.Network(container, data, options);
 
-        // --- Physics Controls ---
-        let isSimulating = true;
-        
-        network.on("stabilizationIterationsDone", function () {
-            stopPhysics();
+        // -- MOUSE INTERACTION FOR TOOLTIP --
+        network.on("hoverNode", function (params) {
+            const nodeId = params.node;
+            const node = nodes.get(nodeId);
+            const tooltip = document.getElementById('custom-tooltip');
+            
+            // Populate tooltip
+            document.getElementById('tooltip-title').innerText = node.label.startsWith('GET') || node.label.startsWith('POST') ? node.label : 'FUNCTION / MODULE';
+            document.getElementById('tooltip-path').innerText = node.label;
+            document.getElementById('tooltip-file').innerText = node.id.split('/').pop(); // Simple filename
+            document.getElementById('tooltip-line').innerText = '--'; 
+            
+            // Position tooltip
+            const canvasPos = network.canvasToDOM(network.getPositions([nodeId])[nodeId]);
+            tooltip.style.left = (canvasPos.x + 20) + 'px';
+            tooltip.style.top = (canvasPos.y - 20) + 'px';
+            tooltip.style.display = 'block';
         });
 
-        network.on("dragStart", function () {
-            if (!isSimulating) startPhysics();
+        network.on("blurNode", function (params) {
+             document.getElementById('custom-tooltip').style.display = 'none';
         });
 
-        function togglePhysics() {
-            if (isSimulating) stopPhysics();
-            else startPhysics();
-        }
-
-        function startPhysics() {
-            network.setOptions({ physics: { enabled: true } });
-            isSimulating = true;
-            document.getElementById('physics-text').innerText = 'Simulating';
-            document.getElementById('physics-indicator').className = 'w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse';
-            document.getElementById('physics-indicator').style.backgroundColor = '#22c55e';
-        }
-
-        function stopPhysics() {
-            network.setOptions({ physics: { enabled: false } });
-            isSimulating = false;
-            document.getElementById('physics-text').innerText = 'Paused';
-            document.getElementById('physics-indicator').className = 'w-1.5 h-1.5 rounded-full bg-zinc-500';
-            document.getElementById('physics-indicator').style.backgroundColor = '#71717a';
-        }
-
-        // --- Interaction & Details Panel ---
-        const detailsPanel = document.getElementById('node-details');
-        
+        // -- CLICK INTERACTION --
         network.on("click", function (params) {
             if (params.nodes.length > 0) {
                 const nodeId = params.nodes[0];
                 const node = nodes.get(nodeId);
-                showDetails(node);
-            } else if (params.edges.length === 0) {
-                hideDetails();
+                openNodeDetails(node);
+            } else {
+                closeDetails();
             }
         });
 
-        function showDetails(node) {
-            // Populate Data
-            document.getElementById('detail-name').innerText = node.label;
-            document.getElementById('detail-blast').innerText = node.data.blastRadius + '%';
-            document.getElementById('detail-affected').innerText = node.data.affectedFiles;
+        function openNodeDetails(node) {
+            const container = document.getElementById('detail-content');
+            document.getElementById('detail-type').innerText = "NODE DETAILS";
+            document.getElementById('detail-title').innerText = node.label;
             
-            document.getElementById('detail-in').innerText = node.data.inDegree;
-            document.getElementById('detail-out').innerText = node.data.outDegree;
-            
-            // Animate Bars (Visual flair)
-            setTimeout(() => {
-                const max = 20; // Arbitrary max for bar scale
-                const inPct = Math.min((node.data.inDegree / max) * 100, 100);
-                const outPct = Math.min((node.data.outDegree / max) * 100, 100);
-                document.getElementById('bar-in').style.width = inPct + '%';
-                document.getElementById('bar-out').style.width = outPct + '%';
-            }, 100);
+            container.innerHTML = \`
+                <div class="grid grid-cols-2 gap-4">
+                     <div class="bg-zinc-900/50 p-4 rounded border border-zinc-800">
+                         <div class="text-xs text-zinc-500 uppercase tracking-widest mb-1">Impact</div>
+                         <div class="text-2xl font-mono text-accent">\${node.data.blastRadius}%</div>
+                     </div>
+                     <div class="bg-zinc-900/50 p-4 rounded border border-zinc-800">
+                         <div class="text-xs text-zinc-500 uppercase tracking-widest mb-1">References</div>
+                         <div class="text-2xl font-mono text-secondary">\${node.data.affectedFiles}</div>
+                     </div>
+                </div>
 
-            // Show Panel
-            detailsPanel.classList.remove('translate-x-[120%]');
+                <div>
+                     <div class="text-xs text-zinc-500 uppercase tracking-widest mb-3 flex items-center gap-2">
+                        <span class="w-1.5 h-1.5 bg-primary rounded-full animate-pulse"></span>
+                        AI Analysis
+                     </div>
+                     <div class="text-sm text-zinc-400 leading-relaxed font-light">
+                        High connectivity detected. This module acts as a central hub for data processing. Recommended to decouple dependencies to reduce blast radius.
+                     </div>
+                </div>
+
+                <div>
+                    <div class="text-xs text-zinc-500 uppercase tracking-widest mb-3">Location</div>
+                    <div class="text-sm font-mono text-zinc-300 bg-zinc-900/50 p-2 rounded">\${node.id}</div>
+                </div>
+            \`;
+            
+            document.getElementById('details-panel').classList.remove('translate-x-full');
+            document.getElementById('details-panel').classList.remove('hidden');
         }
 
-        function hideDetails() {
-            detailsPanel.classList.add('translate-x-[120%]');
-             network.unselectAll();
+        function openFunctionDetails(fn) {
+            const container = document.getElementById('detail-content');
+            document.getElementById('detail-type').innerText = "FUNCTION DETAILS";
+            document.getElementById('detail-title').innerText = fn.name;
+
+            const safeCode = fn.code.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            const safeDoc = fn.doc ? fn.doc : 'No documentation available.';
+            const paramsList = fn.params.length > 0 ? fn.params.join(', ') : 'None';
+
+            container.innerHTML = \`
+                 <div class="space-y-6">
+                    <!-- Metrics Row -->
+                    <div class="flex gap-4 border-b border-zinc-800 pb-6">
+                        <div class="flex-1">
+                             <div class="text-[10px] text-zinc-500 uppercase tracking-widest mb-1">File</div>
+                             <div class="text-xs font-mono text-zinc-300 break-all">\${fn.file.split('/').pop()}</div>
+                        </div>
+                         <div>
+                             <div class="text-[10px] text-zinc-500 uppercase tracking-widest mb-1">Line</div>
+                             <div class="text-xs font-mono text-accent">L\${fn.line}</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Params -->
+                    <div>
+                        <div class="text-[10px] text-zinc-500 uppercase tracking-widest mb-2">Parameters</div>
+                        <div class="flex flex-wrap gap-2">
+                            \${fn.params.map(p => \`<span class="px-2 py-1 bg-zinc-800 rounded text-xs font-mono text-primary">\${p}</span>\`).join('') || '<span class="text-zinc-600 text-xs italic">None</span>'}
+                        </div>
+                    </div>
+
+                    <!-- Description / Doc -->
+                    <div>
+                        <div class="text-[10px] text-zinc-500 uppercase tracking-widest mb-2 flex items-center gap-2">
+                            Description
+                        </div>
+                        <div class="text-sm text-zinc-400 font-light leading-relaxed bg-zinc-900/30 p-3 rounded border border-white/5 whitespace-pre-wrap">\${safeDoc}</div>
+                    </div>
+
+                    <!-- Source Toggle -->
+                    <div>
+                        <div class="text-[10px] text-zinc-500 uppercase tracking-widest mb-2">Source Preview</div>
+                        <pre class="language-javascript text-xs max-h-[300px] overflow-auto"><code class="language-javascript">\${safeCode}</code></pre>
+                    </div>
+                 </div>
+            \`;
+
+            // Re-highlight prism
+            Prism.highlightAllUnder(container);
+
+            document.getElementById('details-panel').classList.remove('translate-x-full');
+            document.getElementById('details-panel').classList.remove('hidden');
         }
 
-        function focusNode(nodeId) {
-            network.focus(nodeId, {
-                scale: 1.2,
-                animation: { duration: 1000, easingFunction: 'easeInOutQuart' }
-            });
-            network.selectNodes([nodeId]);
-            const node = nodes.get(nodeId);
-            showDetails(node);
+        function closeDetails() {
+            document.getElementById('details-panel').classList.add('translate-x-full');
+            network.unselectAll();
+        }
+
+        function resetView() {
+            network.fit({ animation: true });
         }
 
         function searchNodes() {
@@ -446,16 +518,71 @@ export async function generateHtmlReport(
             const found = allNodes.find(n => n.label.toLowerCase().includes(query));
             
             if (found) {
-                focusNode(found.id);
-            } else {
-                // Shake Animation
-                const input = document.getElementById('search-input');
-                input.classList.add('ring-2', 'ring-rose-500', 'translate-x-1');
-                setTimeout(() => input.classList.remove('translate-x-1'), 100);
-                setTimeout(() => input.classList.add('-translate-x-1'), 200);
-                setTimeout(() => input.classList.remove('ring-2', 'ring-rose-500', '-translate-x-1'), 300);
+                switchView('network'); // Ensure we are on graph view
+                network.focus(found.id, {
+                    scale: 1.5,
+                    animation: { duration: 1000, easingFunction: 'easeInOutQuad' }
+                });
+                network.selectNodes([found.id]);
+                openNodeDetails(found);
             }
         }
+        
+        function switchView(viewName) {
+            // Update tabs
+            document.querySelectorAll('.nav-tab').forEach(el => el.classList.remove('active'));
+            // Find button by onclick text content
+            const btns = document.querySelectorAll('.nav-tab');
+            for(let btn of btns) {
+                if(btn.getAttribute('onclick').includes(viewName)) {
+                    btn.classList.add('active');
+                    break;
+                }
+            }
+
+            // Hide all views
+            document.querySelectorAll('.view-panel').forEach(el => el.classList.add('hidden'));
+
+            if (viewName === 'network') {
+                document.getElementById('network-view').classList.remove('hidden');
+            } else if (viewName === 'functions') {
+                document.getElementById('functions-view').classList.remove('hidden');
+                renderFunctions();
+            } else if (viewName === 'files') {
+                document.getElementById('files-view').classList.remove('hidden');
+            }
+        }
+
+        let functionsRendered = false;
+        function renderFunctions() {
+            if (functionsRendered) return;
+            const grid = document.getElementById('functions-grid');
+            
+            // Limit to 200 functions to assume performance if huge repo
+            const displayData = functionsData; // .slice(0, 200);
+
+            displayData.forEach((fn, index) => {
+                const card = document.createElement('div');
+                card.className = 'bg-zinc-900/50 border border-zinc-800 p-4 rounded hover:border-primary/50 transition-colors group cursor-pointer flex flex-col justify-between h-[100px]';
+                card.onclick = () => openFunctionDetails(fn);
+                
+                card.innerHTML = \`
+                    <div class="flex justify-between items-start">
+                        <span class="text-primary font-mono font-bold group-hover:text-white transition-colors truncate w-3/4">\${fn.name}</span>
+                        <span class="text-xs text-zinc-500 font-mono">L\${fn.line}</span>
+                    </div>
+                    <div class="mt-2">
+                        <div class="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">File</div>
+                        <div class="text-xs text-zinc-400 truncate">\${fn.file.split('/').slice(-2).join('/')}</div>
+                    </div>
+                \`;
+                grid.appendChild(card);
+            });
+            functionsRendered = true;
+        }
+        
+        // Initialize view
+        document.querySelector('.nav-tab').classList.add('active'); // Default to first (Graph)
     </script>
 </body>
 </html>
