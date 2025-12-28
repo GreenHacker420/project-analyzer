@@ -8,7 +8,8 @@ export async function generateHtmlReport(
     projectPath: string,
     analysis: ProjectAnalysis,
     graph: DependencyGraph,
-    outputPath: string
+    outputPath: string,
+    gitStats?: any
 ) {
     const nodes: any[] = [];
     const edges: any[] = [];
@@ -139,6 +140,32 @@ export async function generateHtmlReport(
                     `).join('')}
                 </div>
             </div>
+
+            <!-- Git Evolution Section -->
+            ${gitStats ? `
+            <div class="border-t border-border pt-4">
+                <h3 class="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 px-1">Project Evolution</h3>
+                <div class="space-y-3">
+                    <div class="flex justify-between items-center text-sm px-1">
+                        <span class="text-muted-foreground">Total Commits</span>
+                        <span class="font-mono font-medium text-white">${gitStats.totalCommits}</span>
+                    </div>
+                    <div class="flex justify-between items-center text-sm px-1">
+                        <span class="text-muted-foreground">Contributors</span>
+                        <span class="font-mono font-medium text-white">${gitStats.authroStats.length}</span>
+                    </div>
+                    <div class="mt-2 space-y-1">
+                        <div class="text-[10px] text-muted-foreground px-1 mb-1">Top Contributors</div>
+                        ${gitStats.authroStats.slice(0, 3).map((a: any) => `
+                        <div class="flex justify-between items-center px-1 text-xs">
+                           <span class="truncate max-w-[120px]" title="${a.email}">${a.name}</span>
+                           <span class="text-muted-foreground">${a.commits}</span>
+                        </div>
+                        `).join('')}
+                    </div>
+                </div>
+            </div>
+            ` : ''}
 
             <!-- Node Details Panel (Dynamic) -->
             <div id="node-details" class="hidden animate-in slide-in-from-left-4 fade-in duration-200">
