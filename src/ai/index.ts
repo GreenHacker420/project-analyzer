@@ -1,20 +1,18 @@
-
 import { ChatOpenAI } from "@langchain/openai";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { ChatOllama } from "@langchain/ollama";
-import { createReactAgent } from "@langchain/langgraph/prebuilt";
-import { MemorySaver } from "@langchain/langgraph";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
+import { StateGraph, MessagesAnnotation } from "@langchain/langgraph";
 import { GraphNode } from '../graph';
 
 export type AiProviderType = 'openai' | 'gemini' | 'ollama';
 
 export class CodeIntelligence {
-    private agent: any;
+    private app: any;
     private config: any;
 
     constructor(provider: AiProviderType, apiKey: string, modelName?: string) {
-        let model;
+        let model: any;
 
         // Initialize Model based on Provider
         if (provider === 'openai') {
@@ -41,30 +39,26 @@ export class CodeIntelligence {
             throw new Error(`Unsupported provider: ${provider}`);
         }
 
-        // Initialize Memory
-        const checkpointer = new MemorySaver();
+        // Define the Graph
+        const graph = new StateGraph(MessagesAnnotation)
+            .addNode("agent", async (state) => {
+                const response = await model.invoke(state.messages);
+                return { messages: [response] };
+            })
+            .addEdge("__start__", "agent")
+            .addEdge("agent", "__end__");
 
-        // Create Agent
-        this.agent = createReactAgent({
-            llm: model as any,
-            tools: [],
-            checkpointSaver: checkpointer as any
-        });
-
-        // Config for thread persistence
+        this.app = graph.compile();
         this.config = { configurable: { thread_id: "project-analysis-session" } };
     }
 
     private async askAgent(systemPrompt: string, userContent: string): Promise<string> {
-        const result = await this.agent.invoke(
-            {
-                messages: [
-                    new SystemMessage(systemPrompt),
-                    new HumanMessage(userContent)
-                ]
-            },
-            this.config
-        );
+        const result = await this.app.invoke({
+            messages: [
+                new SystemMessage(systemPrompt),
+                new HumanMessage(userContent)
+            ]
+        }, this.config);
 
         const lastMessage = result.messages[result.messages.length - 1];
         return lastMessage.content as string;
