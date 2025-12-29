@@ -14,7 +14,7 @@ const program = new Command();
 program
     .name('projectify')
     .description('Projectify - Autonomous Code Analysis & Visualization')
-    .version('2.0.3');
+    .version('2.0.4');
 
 program
     .argument('[path]', 'Project path to analyze', '.')
