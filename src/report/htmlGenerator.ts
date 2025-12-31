@@ -1,4 +1,3 @@
-
 import fs from 'fs-extra';
 import path from 'path';
 import { ProjectAnalysis } from '../analyzer';
@@ -80,14 +79,24 @@ export async function generateHtmlReport(
 
     // Aggregate functions for the view
     const functionsList: any[] = [];
+    const relativeFiles: Record<string, any> = {};
+    const absoluteProjectPath = path.resolve(projectPath);
+
     Object.entries(analysis.files).forEach(([file, data]) => {
+        // Normalize path for frontend (relative + forward slashes)
+        let relPath = path.relative(absoluteProjectPath, file);
+        if (path.sep === '\\') {
+            relPath = relPath.replace(/\\/g, '/');
+        }
+        relativeFiles[relPath] = data;
+
         data.functions.forEach((fn: any) => {
             // Handle both old (string) and new (FunctionInfo) formats safely
             if (typeof fn === 'object') {
                 functionsList.push({
                     name: fn.name,
                     line: fn.line,
-                    file: file,
+                    file: relPath, // Use relative path here too
                     params: fn.params || [],
                     doc: fn.doc || '',
                     code: fn.code || ''
@@ -96,7 +105,7 @@ export async function generateHtmlReport(
                 functionsList.push({
                     name: fn,
                     line: 0,
-                    file: file,
+                    file: relPath,
                     params: [],
                     doc: '',
                     code: ''
@@ -105,488 +114,54 @@ export async function generateHtmlReport(
         });
     });
 
-    const html = `
-<!DOCTYPE html>
-<html lang="en" class="dark">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Projetify</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            darkMode: 'class',
-            theme: {
-                extend: {
-                    fontFamily: {
-                        sans: ['Inter', 'sans-serif'],
-                        mono: ['JetBrains Mono', 'monospace'],
-                    },
-                    colors: {
-                        background: '#000000',
-                        surface: '#0a0a0a',
-                        primary: '#22d3ee',   // cyan-400
-                        secondary: '#818cf8', // indigo-400
-                        accent: '#f472b6',    // pink-400
+    // --- DEPENDENCY USAGE LOGIC ---
+    const depUsageData: Record<string, string[]> = {};
+    const dependencies = analysis.dependencies || {};
+
+    // Initialize usage arrays
+    Object.keys(dependencies).forEach(dep => depUsageData[dep] = []);
+
+    // Scan all files imports to map back to dependencies
+    Object.entries(relativeFiles).forEach(([relPath, data]: [string, any]) => {
+        if (data.imports && Array.isArray(data.imports)) {
+            data.imports.forEach((imp: string) => {
+                // Check against all dependencies (exact match or scoped/subpath)
+                // e.g. import 'react' matches dep 'react'
+                // e.g. import 'lodash/map' matches dep 'lodash'
+                const matchedDep = Object.keys(dependencies).find(depName => {
+                    return imp === depName || imp.startsWith(depName + '/');
+                });
+
+                if (matchedDep) {
+                    if (!depUsageData[matchedDep].includes(relPath)) {
+                        depUsageData[matchedDep].push(relPath);
                     }
                 }
-            }
-        }
-    </script>
-    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/prism.min.js"></script>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/themes/prism-tomorrow.min.css" rel="stylesheet" />
-
-    <style>
-        body { 
-            background-color: #000000; 
-            color: #ecfeff;
-            overflow: hidden;
-            background-image: radial-gradient(circle at 50% 50%, #111827 0%, #000000 100%);
-        }
-        
-        .glass {
-            background: rgba(10, 10, 10, 0.6);
-            backdrop-filter: blur(8px);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-        }
-
-        .neon-text {
-            text-shadow: 0 0 10px rgba(34, 211, 238, 0.5);
-        }
-
-        .vis-network { outline: none; }
-        
-        /* Custom Scrollbar */
-        ::-webkit-scrollbar { width: 4px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 2px; }
-        
-        /* Navigation Tabs */
-        .nav-tab {
-            position: relative;
-            color: #94a3b8;
-            transition: color 0.2s;
-        }
-        .nav-tab.active {
-            color: #fff;
-            font-weight: 600;
-        }
-        .nav-tab.active::after {
-            content: '';
-            position: absolute;
-            bottom: -18px;
-            left: 0;
-            right: 0;
-            height: 2px;
-            background: #a855f7; /* Purple */
-            box-shadow: 0 0 10px #a855f7;
-        }
-
-        /* Snap Button */
-        .snap-btn {
-            background: rgba(20, 20, 20, 0.8);
-            border: 1px solid rgba(255,255,255,0.1);
-            backdrop-filter: blur(4px);
-            color: #94a3b8;
-            border-radius: 16px;
-            transition: all 0.2s;
-        }
-        .snap-btn:hover {
-            color: #fff;
-            border-color: rgba(255,255,255,0.3);
-            box-shadow: 0 0 20px rgba(0,0,0,0.5);
-        }
-
-        /* Custom Tooltip */
-        #custom-tooltip {
-            pointer-events: none;
-            z-index: 100;
-            transition: opacity 0.1s;
-        }
-
-        /* Code Block Styling */
-        pre[class*="language-"] {
-            background: #0f172a !important;
-            border-radius: 8px;
-            border: 1px solid #1e293b;
-            margin: 0;
-        }
-    </style>
-</head>
-<body class="flex flex-col h-screen font-sans selection:bg-primary/30 selection:text-white">
-
-    <!-- TOP NAVIGATION -->
-    <nav class="h-16 border-b border-white/5 flex items-center justify-between px-6 bg-black z-50">
-        <!-- Logo & Breadcrumb -->
-        <div class="flex items-center gap-4">
-            <div class="flex items-center gap-2 text-primary font-mono tracking-wider font-bold text-lg neon-text">
-                <span>&gt;</span> Projectify
-            </div>
-            <div class="text-zinc-600 font-light text-sm tracking-widest uppercase flex items-center gap-2">
-                <span>//</span>
-                <span>KNOWLEDGE GRAPH</span>
-            </div>
-            <!-- Navigation Arrows (Static) -->
-            <div class="flex gap-1 ml-4 text-zinc-700">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
-            </div>
-        </div>
-
-        <!-- Center Tabs -->
-        <div class="hidden md:flex items-center gap-8 text-sm uppercase tracking-wider">
-            <button class="nav-tab hover:text-white" onclick="switchView('network')">GRAPH</button>
-            <button class="nav-tab active" onclick="switchView('functions')">FUNCTIONS</button>
-            <button class="nav-tab hover:text-white" onclick="switchView('files')">FILES</button>
-        </div>
-
-        <!-- Right Search -->
-        <div class="relative group w-64">
-            <input type="text" id="search-input" 
-                class="w-full bg-zinc-900/50 border border-zinc-800 rounded-full px-4 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/50 transition-all font-mono"
-                placeholder="SEARCH NODE..."
-                onkeydown="if(event.key === 'Enter') searchNodes()">
-            <div class="absolute right-2 top-1.5 text-zinc-600">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-            </div>
-        </div>
-        
-        <div class="ml-4 p-2 rounded border border-zinc-800 text-zinc-500 hover:text-white hover:border-zinc-600 transition-colors cursor-pointer">
-             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-        </div>
-    </nav>
-
-    <!-- CONTENT AREA -->
-    <div class="flex-1 relative overflow-hidden">
-        
-        <!-- GRAPH CONTAINER -->
-        <div id="network-view" class="view-panel absolute inset-0 z-0 cursor-crosshair"></div>
-
-        <!-- FUNCTIONS CONTAINER -->
-        <div id="functions-view" class="view-panel absolute inset-0 z-20 bg-black hidden flex flex-col p-8 overflow-y-auto">
-             <div class="max-w-6xl mx-auto w-full">
-                <h2 class="text-2xl font-mono text-primary mb-6 neon-text">Available Functions</h2>
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="functions-grid">
-                    <!-- Functions injected here -->
-                </div>
-            </div>
-        </div>
-        
-        <!-- FILES CONTAINER (Placeholder) -->
-        <div id="files-view" class="view-panel absolute inset-0 z-20 bg-black hidden flex items-center justify-center">
-            <div class="text-zinc-600 font-mono">FILES VIEW UNDER CONSTRUCTION</div>
-        </div>
-
-        <!-- CUSTOM TOOLTIP -->
-        <div id="custom-tooltip" class="fixed hidden p-4 bg-black/90 border border-primary/50 text-xs font-mono rounded shadow-[0_0_20px_rgba(34,211,238,0.2)]">
-            <div id="tooltip-title" class="text-primary font-bold text-sm mb-2"></div>
-            <div class="space-y-1 text-zinc-400">
-                <div class="flex gap-2"><span class="w-16 text-zinc-600">PATH:</span> <span id="tooltip-path" class="text-white"></span></div>
-                <div class="flex gap-2"><span class="w-16 text-zinc-600">FILE:</span> <span id="tooltip-file" class="text-white"></span></div>
-                <div class="flex gap-2"><span class="w-16 text-zinc-600">LINE:</span> <span id="tooltip-line" class="text-accent"></span></div>
-            </div>
-        </div>
-
-        <!-- DETAILS SIDEBAR (Overlay, conditionally hidden) -->
-        <div id="details-panel" class="absolute top-0 right-0 h-full w-[500px] bg-black/95 backdrop-blur-xl border-l border-white/10 transform translate-x-full transition-transform duration-300 z-30 flex flex-col shadow-2xl">
-            <div class="p-6 border-b border-white/10 flex justify-between items-center">
-                <div>
-                     <div class="text-[10px] text-primary tracking-widest uppercase mb-1" id="detail-type">Node Details</div>
-                     <h2 id="detail-title" class="text-lg font-mono font-bold text-white break-all"></h2>
-                </div>
-                <button onclick="closeDetails()" class="text-zinc-500 hover:text-white">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-                </button>
-            </div>
-            
-            <div class="p-6 space-y-8 flex-1 overflow-y-auto" id="detail-content">
-                <!-- Content injected dynamically -->
-            </div>
-        </div>
-
-        <!-- BOTTOM CONTROLS (Floating) -->
-        <div class="absolute bottom-8 left-1/2 transform -translate-x-1/2 z-10">
-            <button class="snap-btn py-4 px-6 flex flex-col items-center gap-1 group" onclick="resetView()">
-                 <div class="w-6 h-6 border-2 border-current rounded mb-1 bg-gradient-to-tr from-transparent to-white/10"></div>
-                 <span class="text-[10px] tracking-widest font-bold font-mono">SNAP</span>
-            </button>
-        </div>
-
-    </div>
-
-
-    <!-- DATA INJECTION -->
-    <script id="nodes-data" type="application/json">
-        ${safeJSON(nodes)}
-    </script>
-    <script id="edges-data" type="application/json">
-        ${safeJSON(edges)}
-    </script>
-    <script id="functions-data" type="application/json">
-        ${safeJSON(functionsList)}
-    </script>
-
-    <script>
-        // Safe data retrieval
-        const nodesData = JSON.parse(document.getElementById('nodes-data').textContent);
-        const edgesData = JSON.parse(document.getElementById('edges-data').textContent);
-        const functionsData = JSON.parse(document.getElementById('functions-data').textContent);
-        
-        const nodes = new vis.DataSet(nodesData);
-        const edges = new vis.DataSet(edgesData);
-
-        const container = document.getElementById('network-view');
-        const data = { nodes: nodes, edges: edges };
-        
-        const options = {
-            nodes: {
-                borderWidth: 0,
-                shadow: true,
-                font: { face: 'JetBrains Mono', size: 12, color: '#a5f3fc', strokeWidth: 0, vadjust: -30 },
-                title: undefined // Disable default title
-            },
-            edges: {
-                width: 1,
-                smooth: { type: 'continuous', roundness: 0.4 },
-                color: { inherit: false, color: 'rgba(30, 41, 59, 0.4)', highlight: '#38bdf8' },
-                arrows: { to: { enabled: true, scaleFactor: 0.5 } }
-            },
-            physics: {
-                forceAtlas2Based: {
-                    gravitationalConstant: -50,
-                    centralGravity: 0.005,
-                    springLength: 200,
-                    springConstant: 0.08
-                },
-                maxVelocity: 50,
-                solver: 'forceAtlas2Based',
-                timestep: 0.35,
-                stabilization: { enabled: true, iterations: 1000 }
-            },
-            interaction: {
-                hover: true,
-                tooltipDelay: 100,
-                hideEdgesOnDrag: true,
-                dragNodes: true,
-                zoomView: true
-            }
-        };
-
-        const network = new vis.Network(container, data, options);
-
-        // -- MOUSE INTERACTION FOR TOOLTIP --
-        network.on("hoverNode", function (params) {
-            const nodeId = params.node;
-            const node = nodes.get(nodeId);
-            const tooltip = document.getElementById('custom-tooltip');
-            
-            // Populate tooltip
-            document.getElementById('tooltip-title').innerText = node.label.startsWith('GET') || node.label.startsWith('POST') ? node.label : 'FUNCTION / MODULE';
-            document.getElementById('tooltip-path').innerText = node.label;
-            document.getElementById('tooltip-file').innerText = node.id.split('/').pop(); // Simple filename
-            document.getElementById('tooltip-line').innerText = '--'; 
-            
-            // Position tooltip
-            const canvasPos = network.canvasToDOM(network.getPositions([nodeId])[nodeId]);
-            tooltip.style.left = (canvasPos.x + 20) + 'px';
-            tooltip.style.top = (canvasPos.y - 20) + 'px';
-            tooltip.style.display = 'block';
-        });
-
-        network.on("blurNode", function (params) {
-             document.getElementById('custom-tooltip').style.display = 'none';
-        });
-
-        // -- CLICK INTERACTION --
-        network.on("click", function (params) {
-            if (params.nodes.length > 0) {
-                const nodeId = params.nodes[0];
-                const node = nodes.get(nodeId);
-                openNodeDetails(node);
-            } else {
-                closeDetails();
-            }
-        });
-
-        function openNodeDetails(node) {
-            const container = document.getElementById('detail-content');
-            document.getElementById('detail-type').innerText = "NODE DETAILS";
-            document.getElementById('detail-title').innerText = node.label;
-            
-            container.innerHTML = \`
-                <div class="grid grid-cols-2 gap-4">
-                     <div class="bg-zinc-900/50 p-4 rounded border border-zinc-800">
-                         <div class="text-xs text-zinc-500 uppercase tracking-widest mb-1">Impact</div>
-                         <div class="text-2xl font-mono text-accent">\${node.data.blastRadius}%</div>
-                     </div>
-                     <div class="bg-zinc-900/50 p-4 rounded border border-zinc-800">
-                         <div class="text-xs text-zinc-500 uppercase tracking-widest mb-1">References</div>
-                         <div class="text-2xl font-mono text-secondary">\${node.data.affectedFiles}</div>
-                     </div>
-                </div>
-
-                <div>
-                     <div class="text-xs text-zinc-500 uppercase tracking-widest mb-3 flex items-center gap-2">
-                        <span class="w-1.5 h-1.5 bg-primary rounded-full animate-pulse"></span>
-                        AI Analysis
-                     </div>
-                     <div class="text-sm text-zinc-400 leading-relaxed font-light">
-                        High connectivity detected. This module acts as a central hub for data processing. Recommended to decouple dependencies to reduce blast radius.
-                     </div>
-                </div>
-
-                <div>
-                    <div class="text-xs text-zinc-500 uppercase tracking-widest mb-3">Location</div>
-                    <div class="text-sm font-mono text-zinc-300 bg-zinc-900/50 p-2 rounded">\${node.id}</div>
-                </div>
-            \`;
-            
-            document.getElementById('details-panel').classList.remove('translate-x-full');
-            document.getElementById('details-panel').classList.remove('hidden');
-        }
-
-        function openFunctionDetails(fn) {
-            const container = document.getElementById('detail-content');
-            document.getElementById('detail-type').innerText = "FUNCTION DETAILS";
-            document.getElementById('detail-title').innerText = fn.name;
-
-            const safeCode = fn.code.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-            const safeDoc = fn.doc ? fn.doc : 'No documentation available.';
-            const paramsList = fn.params.length > 0 ? fn.params.join(', ') : 'None';
-
-            container.innerHTML = \`
-                 <div class="space-y-6">
-                    <!-- Metrics Row -->
-                    <div class="flex gap-4 border-b border-zinc-800 pb-6">
-                        <div class="flex-1">
-                             <div class="text-[10px] text-zinc-500 uppercase tracking-widest mb-1">File</div>
-                             <div class="text-xs font-mono text-zinc-300 break-all">\${fn.file.split('/').pop()}</div>
-                        </div>
-                         <div>
-                             <div class="text-[10px] text-zinc-500 uppercase tracking-widest mb-1">Line</div>
-                             <div class="text-xs font-mono text-accent">L\${fn.line}</div>
-                        </div>
-                    </div>
-                    
-                    <!-- Params -->
-                    <div>
-                        <div class="text-[10px] text-zinc-500 uppercase tracking-widest mb-2">Parameters</div>
-                        <div class="flex flex-wrap gap-2">
-                            \${fn.params.map(p => \`<span class="px-2 py-1 bg-zinc-800 rounded text-xs font-mono text-primary">\${p}</span>\`).join('') || '<span class="text-zinc-600 text-xs italic">None</span>'}
-                        </div>
-                    </div>
-
-                    <!-- Description / Doc -->
-                    <div>
-                        <div class="text-[10px] text-zinc-500 uppercase tracking-widest mb-2 flex items-center gap-2">
-                            Description
-                        </div>
-                        <div class="text-sm text-zinc-400 font-light leading-relaxed bg-zinc-900/30 p-3 rounded border border-white/5 whitespace-pre-wrap">\${safeDoc}</div>
-                    </div>
-
-                    <!-- Source Toggle -->
-                    <div>
-                        <div class="text-[10px] text-zinc-500 uppercase tracking-widest mb-2">Source Preview</div>
-                        <pre class="language-javascript text-xs max-h-[300px] overflow-auto"><code class="language-javascript">\${safeCode}</code></pre>
-                    </div>
-                 </div>
-            \`;
-
-            // Re-highlight prism
-            Prism.highlightAllUnder(container);
-
-            document.getElementById('details-panel').classList.remove('translate-x-full');
-            document.getElementById('details-panel').classList.remove('hidden');
-        }
-
-        function closeDetails() {
-            document.getElementById('details-panel').classList.add('translate-x-full');
-            network.unselectAll();
-        }
-
-        function resetView() {
-            network.fit({ animation: true });
-        }
-
-        function searchNodes() {
-            const query = document.getElementById('search-input').value.toLowerCase();
-            if (!query) return;
-            
-            const allNodes = nodes.get();
-            const found = allNodes.find(n => n.label.toLowerCase().includes(query));
-            
-            if (found) {
-                switchView('network'); // Ensure we are on graph view
-                network.focus(found.id, {
-                    scale: 1.5,
-                    animation: { duration: 1000, easingFunction: 'easeInOutQuad' }
-                });
-                network.selectNodes([found.id]);
-                openNodeDetails(found);
-            }
-        }
-        
-        function switchView(viewName) {
-            // Update tabs
-            document.querySelectorAll('.nav-tab').forEach(el => el.classList.remove('active'));
-            // Find button by onclick text content
-            const btns = document.querySelectorAll('.nav-tab');
-            for(let btn of btns) {
-                if(btn.getAttribute('onclick').includes(viewName)) {
-                    btn.classList.add('active');
-                    break;
-                }
-            }
-
-            // Hide all views
-            document.querySelectorAll('.view-panel').forEach(el => el.classList.add('hidden'));
-
-            if (viewName === 'network') {
-                document.getElementById('network-view').classList.remove('hidden');
-            } else if (viewName === 'functions') {
-                document.getElementById('functions-view').classList.remove('hidden');
-                renderFunctions();
-            } else if (viewName === 'files') {
-                document.getElementById('files-view').classList.remove('hidden');
-            }
-        }
-
-        let functionsRendered = false;
-        function renderFunctions() {
-            if (functionsRendered) return;
-            const grid = document.getElementById('functions-grid');
-            
-            // Limit to 200 functions to assume performance if huge repo
-            const displayData = functionsData; // .slice(0, 200);
-
-            displayData.forEach((fn, index) => {
-                const card = document.createElement('div');
-                card.className = 'bg-zinc-900/50 border border-zinc-800 p-4 rounded hover:border-primary/50 transition-colors group cursor-pointer flex flex-col justify-between h-[100px]';
-                card.onclick = () => openFunctionDetails(fn);
-                
-                card.innerHTML = \`
-                    <div class="flex justify-between items-start">
-                        <span class="text-primary font-mono font-bold group-hover:text-white transition-colors truncate w-3/4">\${fn.name}</span>
-                        <span class="text-xs text-zinc-500 font-mono">L\${fn.line}</span>
-                    </div>
-                    <div class="mt-2">
-                        <div class="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">File</div>
-                        <div class="text-xs text-zinc-400 truncate">\${fn.file.split('/').slice(-2).join('/')}</div>
-                    </div>
-                \`;
-                grid.appendChild(card);
             });
-            functionsRendered = true;
         }
-        
-        // Initialize view
-        document.querySelector('.nav-tab').classList.add('active'); // Default to first (Graph)
-    </script>
-</body>
-</html>
-    `;
+    });
+
+
+    // --- TEMPLATE LOADING ---
+    const templatePath = path.join(__dirname, 'template.html');
+    let html = '';
+
+    try {
+        html = await fs.readFile(templatePath, 'utf-8');
+    } catch (e) {
+        console.error('Error reading HTML template:', e);
+        html = '<h1>Error loading template. Ensure dist/report/template.html exists.</h1>';
+    }
+
+    // --- DATA INJECTION ---
+    const base64JSON = (data: any) => Buffer.from(JSON.stringify(data)).toString('base64');
+
+    html = html.replace('{{NODES_JSON}}', () => base64JSON(nodes));
+    html = html.replace('{{EDGES_JSON}}', () => base64JSON(edges));
+    html = html.replace('{{FUNCTIONS_JSON}}', () => base64JSON(functionsList));
+    html = html.replace('{{FILES_JSON}}', () => base64JSON(relativeFiles));
+    html = html.replace('{{DEPS_JSON}}', () => base64JSON(dependencies));
+    html = html.replace('{{DEP_USAGE_JSON}}', () => base64JSON(depUsageData));
 
     await fs.writeFile(outputPath, html);
 }

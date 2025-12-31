@@ -17,6 +17,9 @@ export interface FileAnalysis {
     exports: string[];
     functions: FunctionInfo[];
     classes: string[];
+    content?: string;
+    language?: string;
+    size?: number;
 }
 
 export function parseJS(content: string, filePath: string): FileAnalysis {

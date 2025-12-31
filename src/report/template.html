@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Projetify</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        background: '#000000',
+                        surface: '#0a0a0a',
+                        primary: '#22d3ee',   // cyan-400
+                        secondary: '#818cf8', // indigo-400
+                        accent: '#f472b6',    // pink-400
+                    }
+                }
+            }
+        }
+    </script>
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap"
+        rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/prism.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/themes/prism-tomorrow.min.css" rel="stylesheet" />
+
+    <style>
+        body {
+            background-color: #000000;
+            color: #ecfeff;
+            overflow: hidden;
+            background-image: radial-gradient(circle at 50% 50%, #111827 0%, #000000 100%);
+        }
+
+        .glass {
+            background: rgba(10, 10, 10, 0.6);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .neon-text {
+            text-shadow: 0 0 10px rgba(34, 211, 238, 0.5);
+        }
+
+        .vis-network {
+            outline: none;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 2px;
+        }
+
+        /* Navigation Tabs */
+        .nav-tab {
+            position: relative;
+            color: #94a3b8;
+            transition: color 0.2s;
+        }
+
+        .nav-tab.active {
+            color: #fff;
+            font-weight: 600;
+        }
+
+        .nav-tab.active::after {
+            content: '';
+            position: absolute;
+            bottom: -18px;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: #a855f7;
+            /* Purple */
+            box-shadow: 0 0 10px #a855f7;
+        }
+
+        /* Snap Button */
+        .snap-btn {
+            background: rgba(20, 20, 20, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(4px);
+            color: #94a3b8;
+            border-radius: 16px;
+            transition: all 0.2s;
+        }
+
+        .snap-btn:hover {
+            color: #fff;
+            border-color: rgba(255, 255, 255, 0.3);
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+        }
+
+        /* Custom Tooltip */
+        #custom-tooltip {
+            pointer-events: none;
+            z-index: 100;
+            transition: opacity 0.1s;
+        }
+
+        /* Code Block Styling */
+        pre[class*="language-"] {
+            background: #0f172a !important;
+            border-radius: 8px;
+            border: 1px solid #1e293b;
+            margin: 0;
+        }
+    </style>
+</head>
+
+<body class="flex flex-col h-screen font-sans selection:bg-primary/30 selection:text-white">
+
+    <!-- TOP NAVIGATION -->
+    <nav class="h-16 border-b border-white/5 flex items-center justify-between px-6 bg-black z-50">
+        <!-- Logo & Breadcrumb -->
+        <div class="flex items-center gap-4">
+            <div class="flex items-center gap-2 text-primary font-mono tracking-wider font-bold text-lg neon-text">
+                <span>&gt;</span> Projectify
+            </div>
+            <div class="text-zinc-600 font-light text-sm tracking-widest uppercase flex items-center gap-2">
+                <span>//</span>
+                <span>KNOWLEDGE GRAPH</span>
+            </div>
+            <!-- Navigation Arrows (Static) -->
+            <div class="flex gap-1 ml-4 text-zinc-700">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                </svg>
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3">
+                    </path>
+                </svg>
+            </div>
+        </div>
+
+        <!-- Center Tabs -->
+        <div class="hidden md:flex items-center gap-8 text-sm uppercase tracking-wider">
+            <button class="nav-tab hover:text-white" onclick="switchView('network')">GRAPH</button>
+            <button class="nav-tab active" onclick="switchView('functions')">FUNCTIONS</button>
+            <button class="nav-tab hover:text-white" onclick="switchView('files')">FILES</button>
+            <button class="nav-tab hover:text-white" onclick="switchView('dependencies')">DEPENDENCIES</button>
+        </div>
+
+        <!-- Right Search -->
+        <div class="relative group w-64">
+            <input type="text" id="search-input"
+                class="w-full bg-zinc-900/50 border border-zinc-800 rounded-full px-4 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/50 transition-all font-mono"
+                placeholder="SEARCH NODE..." onkeydown="if(event.key === 'Enter') searchNodes()">
+            <div class="absolute right-2 top-1.5 text-zinc-600">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                </svg>
+            </div>
+        </div>
+
+        <div
+            class="ml-4 p-2 rounded border border-zinc-800 text-zinc-500 hover:text-white hover:border-zinc-600 transition-colors cursor-pointer">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z">
+                </path>
+            </svg>
+        </div>
+    </nav>
+
+    <!-- CONTENT AREA -->
+    <div class="flex-1 relative overflow-hidden">
+
+        <!-- GRAPH CONTAINER -->
+        <div id="network-view" class="view-panel absolute inset-0 z-0 cursor-crosshair"></div>
+
+        <!-- FUNCTIONS CONTAINER -->
+        <div id="functions-view"
+            class="view-panel absolute inset-0 z-20 bg-black hidden flex flex-col p-8 overflow-y-auto">
+            <div class="max-w-6xl mx-auto w-full">
+                <h2 class="text-2xl font-mono text-primary mb-6 neon-text">Available Functions</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="functions-grid">
+                    <!-- Functions injected here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- FILES CONTAINER -->
+        <div id="files-view" class="view-panel absolute inset-0 z-20 bg-black hidden flex h-full">
+            <!-- Sidebar -->
+            <div class="w-1/4 h-full border-r border-zinc-800 bg-zinc-900/30 overflow-y-auto p-4 custom-scrollbar">
+                <h3 class="text-xs font-mono uppercase tracking-widest text-zinc-500 mb-4">Project Explorer</h3>
+                <div id="file-tree" class="font-mono text-sm space-y-1"></div>
+            </div>
+            <!-- Code Viewer -->
+            <div class="flex-1 h-full bg-zinc-950 overflow-auto p-6 relative">
+                <div id="file-placeholder"
+                    class="absolute inset-0 flex items-center justify-center text-zinc-700 font-mono text-sm">
+                    &lt; SELECT A FILE TO VIEW SOURCE &gt;
+                </div>
+                <div id="code-container" class="hidden">
+                    <div class="flex justify-between items-center mb-4 border-b border-zinc-800 pb-2">
+                        <span id="current-filename" class="text-primary font-mono font-bold"></span>
+                        <span id="current-lang"
+                            class="text-[10px] uppercase text-zinc-500 bg-zinc-900 px-2 py-1 rounded"></span>
+                    </div>
+                    <pre><code id="code-content" class="language-javascript"></code></pre>
+                </div>
+            </div>
+        </div>
+
+        <!-- DEPENDENCIES CONTAINER -->
+        <div id="dependencies-view"
+            class="view-panel absolute inset-0 z-20 bg-black hidden flex flex-col p-8 overflow-y-auto">
+            <div class="max-w-4xl mx-auto w-full">
+                <h2 class="text-2xl font-mono text-accent mb-6 neon-text">Dependencies & Libraries</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="deps-grid">
+                    <!-- Deps injected here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- CUSTOM TOOLTIP -->
+        <div id="custom-tooltip"
+            class="fixed hidden p-4 bg-black/90 border border-primary/50 text-xs font-mono rounded shadow-[0_0_20px_rgba(34,211,238,0.2)]">
+            <div id="tooltip-title" class="text-primary font-bold text-sm mb-2"></div>
+            <div class="space-y-1 text-zinc-400">
+                <div class="flex gap-2"><span class="w-16 text-zinc-600">PATH:</span> <span id="tooltip-path"
+                        class="text-white"></span></div>
+                <div class="flex gap-2"><span class="w-16 text-zinc-600">FILE:</span> <span id="tooltip-file"
+                        class="text-white"></span></div>
+                <div class="flex gap-2"><span class="w-16 text-zinc-600">LINE:</span> <span id="tooltip-line"
+                        class="text-accent"></span></div>
+            </div>
+        </div>
+
+        <!-- DETAILS SIDEBAR (Overlay, conditionally hidden) -->
+        <div id="details-panel"
+            class="absolute top-0 right-0 h-full w-[500px] bg-black/95 backdrop-blur-xl border-l border-white/10 transform translate-x-full transition-transform duration-300 z-30 flex flex-col shadow-2xl">
+            <div class="p-6 border-b border-white/10 flex justify-between items-center">
+                <div>
+                    <div class="text-[10px] text-primary tracking-widest uppercase mb-1" id="detail-type">Node Details
+                    </div>
+                    <h2 id="detail-title" class="text-lg font-mono font-bold text-white break-all"></h2>
+                </div>
+                <button onclick="closeDetails()" class="text-zinc-500 hover:text-white">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12">
+                        </path>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="p-6 space-y-8 flex-1 overflow-y-auto" id="detail-content">
+                <!-- Content injected dynamically -->
+            </div>
+        </div>
+
+        <!-- BOTTOM CONTROLS (Floating) -->
+        <div class="absolute bottom-8 left-1/2 transform -translate-x-1/2 z-10">
+            <button class="snap-btn py-4 px-6 flex flex-col items-center gap-1 group" onclick="resetView()">
+                <div
+                    class="w-6 h-6 border-2 border-current rounded mb-1 bg-gradient-to-tr from-transparent to-white/10">
+                </div>
+                <span class="text-[10px] tracking-widest font-bold font-mono">SNAP</span>
+            </button>
+        </div>
+
+    </div>
+
+
+    <!-- DATA INJECTION -->
+    <script id="nodes-data" type="application/json">
+        {{NODES_JSON}}
+    </script>
+    <script id="edges-data" type="application/json">
+        {{EDGES_JSON}}
+    </script>
+    <script id="functions-data" type="application/json">
+        {{FUNCTIONS_JSON}}
+    </script>
+    <script id="files-data" type="application/json">
+        {{FILES_JSON}}
+    </script>
+    <script id="deps-data" type="application/json">
+        {{DEPS_JSON}}
+    </script>
+    <script id="dep-usage-data" type="application/json">
+        {{DEP_USAGE_JSON}}
+    </script>
+
+    <script>
+        // Helper to safely decode Base64 JSON
+        const decodeData = (id) => {
+            try {
+                const raw = document.getElementById(id).textContent.trim();
+                return JSON.parse(atob(raw));
+            } catch (e) {
+                console.error(`Failed to decode data for ${id}`, e);
+                return {};
+            }
+        };
+
+        const nodesData = decodeData('nodes-data');
+        const edgesData = decodeData('edges-data');
+        const functionsData = decodeData('functions-data');
+        const filesData = decodeData('files-data');
+        const depsData = decodeData('deps-data');
+        const depUsageData = decodeData('dep-usage-data');
+
+        const nodes = new vis.DataSet(nodesData);
+        const edges = new vis.DataSet(edgesData);
+
+        const container = document.getElementById('network-view');
+        const data = { nodes: nodes, edges: edges };
+
+        const options = {
+            nodes: { borderWidth: 0, shadow: true, font: { face: 'JetBrains Mono', size: 12, color: '#a5f3fc', strokeWidth: 0, vadjust: -30 }, title: undefined },
+            edges: { width: 1, smooth: { type: 'continuous', roundness: 0.4 }, color: { inherit: false, color: 'rgba(30, 41, 59, 0.4)', highlight: '#38bdf8' }, arrows: { to: { enabled: true, scaleFactor: 0.5 } } },
+            physics: { forceAtlas2Based: { gravitationalConstant: -50, centralGravity: 0.005, springLength: 200, springConstant: 0.08 }, maxVelocity: 50, solver: 'forceAtlas2Based', timestep: 0.35, stabilization: { enabled: true, iterations: 1000 } },
+            interaction: { hover: true, tooltipDelay: 100, hideEdgesOnDrag: true, dragNodes: true, zoomView: true }
+        };
+
+        const network = new vis.Network(container, data, options);
+
+        // -- MOUSE INTERACTION --
+        network.on("hoverNode", function (params) {
+            const nodeId = params.node;
+            const node = nodes.get(nodeId);
+            const tooltip = document.getElementById('custom-tooltip');
+            document.getElementById('tooltip-title').innerText = node.label.startsWith('GET') || node.label.startsWith('POST') ? node.label : 'FUNCTION / MODULE';
+            document.getElementById('tooltip-path').innerText = node.label;
+            document.getElementById('tooltip-file').innerText = node.id.split('/').pop();
+            document.getElementById('tooltip-line').innerText = '--';
+            const canvasPos = network.canvasToDOM(network.getPositions([nodeId])[nodeId]);
+            tooltip.style.left = (canvasPos.x + 20) + 'px';
+            tooltip.style.top = (canvasPos.y - 20) + 'px';
+            tooltip.style.display = 'block';
+        });
+        network.on("blurNode", params => document.getElementById('custom-tooltip').style.display = 'none');
+        network.on("click", params => params.nodes.length > 0 ? openNodeDetails(nodes.get(params.nodes[0])) : closeDetails());
+
+        function openNodeDetails(node) {
+            const container = document.getElementById('detail-content');
+            document.getElementById('detail-type').innerText = "NODE DETAILS";
+            document.getElementById('detail-title').innerText = node.label;
+            container.innerHTML = `<div class="grid grid-cols-2 gap-4"><div class="bg-zinc-900/50 p-4 rounded border border-zinc-800"><div class="text-xs text-zinc-500 uppercase tracking-widest mb-1">Impact</div><div class="text-2xl font-mono text-accent">${node.data.blastRadius}%</div></div><div class="bg-zinc-900/50 p-4 rounded border border-zinc-800"><div class="text-xs text-zinc-500 uppercase tracking-widest mb-1">References</div><div class="text-2xl font-mono text-secondary">${node.data.affectedFiles}</div></div></div><div><div class="text-xs text-zinc-500 uppercase tracking-widest mb-3 flex items-center gap-2"><span class="w-1.5 h-1.5 bg-primary rounded-full animate-pulse"></span>AI Analysis</div><div class="text-sm text-zinc-400 leading-relaxed font-light">High connectivity detected. Recommended to decouple dependencies.</div></div><div><div class="text-xs text-zinc-500 uppercase tracking-widest mb-3">Location</div><div class="text-sm font-mono text-zinc-300 bg-zinc-900/50 p-2 rounded">${node.id}</div></div>`;
+            document.getElementById('details-panel').classList.remove('translate-x-full');
+            document.getElementById('details-panel').classList.remove('hidden');
+        }
+
+        function openFunctionDetails(fn) {
+            const container = document.getElementById('detail-content');
+            document.getElementById('detail-type').innerText = "FUNCTION DETAILS";
+            document.getElementById('detail-title').innerText = fn.name;
+            const safeCode = fn.code.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            const safeDoc = fn.doc || 'No documentation.';
+            container.innerHTML = `<div class="space-y-6"><div class="flex gap-4 border-b border-zinc-800 pb-6"><div class="flex-1"><div class="text-[10px] text-zinc-500 uppercase tracking-widest mb-1">File</div><div class="text-xs font-mono text-zinc-300 break-all">${fn.file.split('/').pop()}</div></div><div><div class="text-[10px] text-zinc-500 uppercase tracking-widest mb-1">Line</div><div class="text-xs font-mono text-accent">L${fn.line}</div></div></div><div><div class="text-[10px] text-zinc-500 uppercase tracking-widest mb-2">Parameters</div><div class="flex flex-wrap gap-2">${fn.params.map(p => `<span class="px-2 py-1 bg-zinc-800 rounded text-xs font-mono text-primary">${p}</span>`).join('') || '<span class="text-zinc-600 text-xs italic">None</span>'}</div></div><div><div class="text-[10px] text-zinc-500 uppercase tracking-widest mb-2 flex items-center gap-2">Description</div><div class="text-sm text-zinc-400 font-light leading-relaxed bg-zinc-900/30 p-3 rounded border border-white/5 whitespace-pre-wrap">${safeDoc}</div></div><div><div class="text-[10px] text-zinc-500 uppercase tracking-widest mb-2">Source Preview</div><pre class="language-javascript text-xs max-h-[300px] overflow-auto"><code class="language-javascript">${safeCode}</code></pre></div></div>`;
+            Prism.highlightAllUnder(container);
+            document.getElementById('details-panel').classList.remove('translate-x-full');
+            document.getElementById('details-panel').classList.remove('hidden');
+        }
+
+        function closeDetails() { document.getElementById('details-panel').classList.add('translate-x-full'); network.unselectAll(); }
+        function resetView() { network.fit({ animation: true }); }
+        function searchNodes() {
+            const query = document.getElementById('search-input').value.toLowerCase();
+            if (!query) return;
+            const found = nodes.get().find(n => n.label.toLowerCase().includes(query));
+            if (found) { switchView('network'); network.focus(found.id, { scale: 1.5, animation: { duration: 1000 } }); network.selectNodes([found.id]); openNodeDetails(found); }
+        }
+
+        function switchView(viewName) {
+            document.querySelectorAll('.nav-tab').forEach(el => el.classList.remove('active'));
+            const btns = document.querySelectorAll('.nav-tab');
+            for (let btn of btns) { if (btn.getAttribute('onclick').includes(viewName)) { btn.classList.add('active'); break; } }
+            document.querySelectorAll('.view-panel').forEach(el => el.classList.add('hidden'));
+            if (viewName === 'network') document.getElementById('network-view').classList.remove('hidden');
+            else if (viewName === 'functions') { document.getElementById('functions-view').classList.remove('hidden'); renderFunctions(); }
+            else if (viewName === 'files') { document.getElementById('files-view').classList.remove('hidden'); renderFiles(); }
+            else if (viewName === 'dependencies') { document.getElementById('dependencies-view').classList.remove('hidden'); renderDependencies(); }
+        }
+
+        let functionsRendered = false;
+        function renderFunctions() {
+            if (functionsRendered) return;
+            const grid = document.getElementById('functions-grid');
+            functionsData.forEach(fn => {
+                const card = document.createElement('div');
+                card.className = 'bg-zinc-900/50 border border-zinc-800 p-4 rounded hover:border-primary/50 transition-colors group cursor-pointer flex flex-col justify-between h-[100px]';
+                card.onclick = () => openFunctionDetails(fn);
+                card.innerHTML = `<div class="flex justify-between items-start"><span class="text-primary font-mono font-bold group-hover:text-white transition-colors truncate w-3/4">${fn.name}</span><span class="text-xs text-zinc-500 font-mono">L${fn.line}</span></div><div class="mt-2"><div class="text-[10px] text-zinc-500 uppercase tracking-widest mb-1">File</div><div class="text-xs text-zinc-400 truncate">${fn.file.split('/').slice(-2).join('/')}</div></div>`;
+                grid.appendChild(card);
+            });
+            functionsRendered = true;
+        }
+
+        let depsRendered = false;
+        function renderDependencies() {
+            if (depsRendered) return;
+            const grid = document.getElementById('deps-grid');
+            Object.entries(depsData).forEach(([name, version]) => {
+                const usages = depUsageData[name] || [];
+                const card = document.createElement('div');
+                card.className = 'bg-zinc-900/50 border border-zinc-800 p-4 rounded flex flex-col gap-2';
+
+                let usageHtml = '';
+                if (usages.length > 0) {
+                    usageHtml = `
+                        <div class="mt-2 text-xs text-zinc-500 border-t border-zinc-800 pt-2">
+                            <span class="uppercase tracking-widest font-bold">Used by (${usages.length})</span>
+                            <div class="mt-1 flex flex-col gap-1 max-h-32 overflow-y-auto custom-scrollbar">
+                                ${usages.map(f => `<span class="text-zinc-400 font-mono truncate hover:text-white cursor-pointer" onclick="switchView('files'); viewFileByPath('${f}')">${f}</span>`).join('')}
+                            </div>
+                        </div>
+                     `;
+                } else {
+                    usageHtml = `<div class="mt-2 text-xs text-zinc-600 italic">No direct imports detected.</div>`;
+                }
+
+                card.innerHTML = `
+                    <div class="flex justify-between items-center">
+                        <span class="text-zinc-300 font-mono font-bold">${name}</span>
+                        <span class="px-2 py-1 rounded bg-secondary/10 text-secondary text-xs border border-secondary/20">${version}</span>
+                    </div>
+                    ${usageHtml}
+                 `;
+                grid.appendChild(card);
+            });
+            depsRendered = true;
+        }
+
+        let filesRendered = false;
+        function renderFiles() {
+            if (filesRendered) return;
+            const treeContainer = document.getElementById('file-tree');
+            const paths = Object.keys(filesData).sort();
+            const root = {};
+
+            // Build Tree
+            paths.forEach(p => {
+                const parts = p.split('/');
+                let current = root;
+                parts.forEach((part, i) => {
+                    if (!current[part]) current[part] = (i === parts.length - 1) ? { __file: true, path: p } : {};
+                    current = current[part];
+                });
+            });
+
+            // Render Tree
+            function createTreeEl(obj, depth = 0) {
+                const ul = document.createElement('ul');
+                ul.className = depth > 0 ? 'ml-4 border-l border-zinc-800 pl-2' : '';
+                Object.keys(obj).sort().forEach(key => {
+                    if (key === '__file' || key === 'path') return;
+                    const li = document.createElement('li');
+                    const isFile = obj[key].__file;
+
+                    if (isFile) {
+                        li.innerHTML = `<div class="py-1 cursor-pointer text-zinc-400 hover:text-white flex items-center gap-2 group" onclick="viewFile('${obj[key].path}', this)"><svg class="w-3 h-3 text-zinc-600 group-hover:text-primary transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>${key}</div>`;
+                    } else {
+                        li.innerHTML = `<div class="py-1 text-zinc-500 text-xs font-bold uppercase tracking-wider mb-1 mt-2">${key}</div>`;
+                        li.appendChild(createTreeEl(obj[key], depth + 1));
+                    }
+                    ul.appendChild(li);
+                });
+                return ul;
+            }
+            treeContainer.appendChild(createTreeEl(root));
+            filesRendered = true;
+        }
+
+        window.viewFile = (path, el) => {
+            document.querySelectorAll('#file-tree div').forEach(d => d.classList.remove('text-primary', 'font-bold'));
+            el && el.classList.add('text-primary', 'font-bold');
+
+            const fileData = filesData[path];
+            document.getElementById('file-placeholder').classList.add('hidden');
+            document.getElementById('code-container').classList.remove('hidden');
+            document.getElementById('current-filename').innerText = path;
+            const lid = fileData.language || 'javascript';
+            document.getElementById('current-lang').innerText = lid;
+
+            const codeEl = document.getElementById('code-content');
+            codeEl.className = 'language-' + lid;
+            codeEl.textContent = fileData.content;
+            Prism.highlightElement(codeEl);
+        }
+
+        window.viewFileByPath = (filePath) => {
+            const fileData = filesData[filePath];
+            if (fileData) {
+                window.viewFile(filePath, null);
+            }
+        }
+
+        document.querySelector('.nav-tab').classList.add('active'); 
+    </script>
+</body>
+
+</html>

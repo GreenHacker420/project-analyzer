@@ -1,6 +1,6 @@
 {
   "name": "projectify-cli",
-  "version": "2.0.4",
+  "version": "2.0.5",
   "description": "Project Analyzer using LangChain",
   "main": "dist/index.js",
   "bin": {
@@ -19,7 +19,7 @@
   ],
   "scripts": {
     "prepublishOnly": "npm run build",
-    "build": "tsc && echo '#!/usr/bin/env node' | cat - dist/index.js > dist/index.js.tmp && mv dist/index.js.tmp dist/index.js && chmod +x dist/index.js",
+    "build": "tsc && cp src/report/template.html dist/report/ && echo '#!/usr/bin/env node' | cat - dist/index.js > dist/index.js.tmp && mv dist/index.js.tmp dist/index.js && chmod +x dist/index.js",
     "start": "node dist/index.js",
     "test": "jest",
     "dev": "ts-node src/index.ts"
