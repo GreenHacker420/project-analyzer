@@ -66,44 +66,10 @@ export function parseJS(content: string, filePath: string): FileAnalysis {
                 analysis.imports.push(path.node.source.value);
             },
             ExportNamedDeclaration(path) {
-                if (path.node.declaration) {
-                    if (t.isFunctionDeclaration(path.node.declaration) && path.node.declaration.id) {
-                        analysis.exports.push(path.node.declaration.id.name);
-                    } else if (t.isVariableDeclaration(path.node.declaration)) {
-                        path.node.declaration.declarations.forEach(d => {
-                            if (t.isIdentifier(d.id)) {
-                                analysis.exports.push(d.id.name);
-                            }
-                        });
-                    } else if (t.isClassDeclaration(path.node.declaration) && path.node.declaration.id) {
-                        analysis.exports.push(path.node.declaration.id.name);
-                    }
-                }
+                handleExportDeclaration(path, analysis);
             },
             FunctionDeclaration(path) {
-                if (path.node.id && path.node.loc) {
-                    const start = path.node.loc.start.line - 1;
-                    const end = path.node.loc.end.line;
-                    const code = content.split('\n').slice(start, end).join('\n');
-
-                    const params = path.node.params.map(p => {
-                        if (t.isIdentifier(p)) return p.name;
-                        if (t.isAssignmentPattern(p) && t.isIdentifier(p.left)) return p.left.name;
-                        return 'arg';
-                    });
-
-                    const doc = path.node.leadingComments
-                        ? path.node.leadingComments.map(c => c.value.trim()).join('\n')
-                        : undefined;
-
-                    analysis.functions.push({
-                        name: path.node.id.name,
-                        line: path.node.loc.start.line,
-                        params: params,
-                        doc: doc,
-                        code: code
-                    });
-                }
+                handleFunctionDeclaration(path, content, analysis);
             },
             ClassDeclaration(path) {
                 if (path.node.id) {
@@ -117,4 +83,46 @@ export function parseJS(content: string, filePath: string): FileAnalysis {
     }
 
     return analysis;
+}
+
+function handleExportDeclaration(path: any, analysis: FileAnalysis) {
+    if (path.node.declaration) {
+        if (t.isFunctionDeclaration(path.node.declaration) && path.node.declaration.id) {
+            analysis.exports.push(path.node.declaration.id.name);
+        } else if (t.isVariableDeclaration(path.node.declaration)) {
+            path.node.declaration.declarations.forEach((d: any) => {
+                if (t.isIdentifier(d.id)) {
+                    analysis.exports.push(d.id.name);
+                }
+            });
+        } else if (t.isClassDeclaration(path.node.declaration) && path.node.declaration.id) {
+            analysis.exports.push(path.node.declaration.id.name);
+        }
+    }
+}
+
+function handleFunctionDeclaration(path: any, content: string, analysis: FileAnalysis) {
+    if (path.node.id && path.node.loc) {
+        const start = path.node.loc.start.line - 1;
+        const end = path.node.loc.end.line;
+        const code = content.split('\n').slice(start, end).join('\n');
+
+        const params = path.node.params.map((p: any) => {
+            if (t.isIdentifier(p)) return p.name;
+            if (t.isAssignmentPattern(p) && t.isIdentifier(p.left)) return p.left.name;
+            return 'arg';
+        });
+
+        const doc = path.node.leadingComments
+            ? path.node.leadingComments.map((c: any) => c.value.trim()).join('\n')
+            : undefined;
+
+        analysis.functions.push({
+            name: path.node.id.name,
+            line: path.node.loc.start.line,
+            params: params,
+            doc: doc,
+            code: code
+        });
+    }
 }
