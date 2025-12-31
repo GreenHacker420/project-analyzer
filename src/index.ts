@@ -6,6 +6,11 @@ import fs from 'fs-extra';
 import { scanProject } from './scanner';
 import { analyzeFiles } from './analyzer';
 import { DependencyGraph } from './graph';
+import * as dotenv from 'dotenv';
+
+// Load env from current working directory
+dotenv.config({ path: path.join(process.cwd(), '.env') });
+
 import { CodeIntelligence, AiProviderType } from './ai';
 import { GitService } from './utils/gitUtils';
 
@@ -14,7 +19,7 @@ const program = new Command();
 program
     .name('projectify')
     .description('Projectify - Autonomous Code Analysis & Visualization')
-    .version('2.0.5');
+    .version('2.1.0');
 
 program
     .argument('[path]', 'Project path to analyze', '.')
@@ -193,11 +198,14 @@ program
 
             const htmlPath = path.resolve('analysis-report.html');
             const { generateHtmlReport } = require('./report/htmlGenerator');
-            // Check if we need to pass new data to html generator. 
-            // For now, we just pass the same args, assuming HTML generator might need updates later 
-            // but the JSON report is the source of truth for raw data.
             await generateHtmlReport(projectPath, analysis, graph, htmlPath, gitStats);
             console.log(chalk.green(`✅ HTML Graph saved to ${htmlPath}`));
+
+            // Save AI Context Report
+            const aiContextPath = path.resolve('ai-context.md');
+            const { generateAiContext } = require('./report/aiContextGenerator');
+            await generateAiContext(graph, analysis, aiContextPath);
+            console.log(chalk.green(`✅ AI Context Report saved to ${aiContextPath}`));
 
             // Save Summary MD
             if (projectSummary || gitInsight) {

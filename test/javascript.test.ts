@@ -1,4 +1,4 @@
-import { parseJS } from './javascript';
+import { parseJS } from '../src/analyzer/parsers/javascript';
 
 describe('JavaScript Parser', () => {
 

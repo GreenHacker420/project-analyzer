@@ -11,11 +11,12 @@ export function parsePython(content: string, filePath: string): FileAnalysis {
 
     const lines = content.split('\n');
 
-    // Regex patterns
-    const importRegex = /^(?:from|import)\s+([\w\.]+)/;
-    const defRegex = /^\s*def\s+([a-zA-Z_]\w*)/;
-    const classRegex = /^\s*class\s+([a-zA-Z_]\w*)/;
-    const assignRegex = /^([a-zA-Z_]\w*)\s*=/; // Global assignments
+    // Regex patterns for Python parsing
+    // Note: This does not resolve complex ASTs but captures common patterns.
+    const importRegex = /^(?:from|import)\s+([\w\.]+)/; // Matches 'import x' or 'from x import y'
+    const defRegex = /^\s*def\s+([a-zA-Z_]\w*)/;         // Matches function definitions
+    const classRegex = /^\s*class\s+([a-zA-Z_]\w*)/;     // Matches class definitions
+    const assignRegex = /^([a-zA-Z_]\w*)\s*=/;           // Matches global variable assignments
 
     lines.forEach((line, index) => {
         // Imports
