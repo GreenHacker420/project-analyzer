@@ -11,6 +11,9 @@ Projectify is a powerful, standalone Node.js tool designed to analyze codebase a
 - **AI-Powered Insights**: Uses OpenAI (LangChain) to summarize architecture and explain high-risk components.
 - **Blast Radius Calculation**: Instantly identify the most critical files in your project based on dependency impact.
 - **Interactive Visualization**: Generates a premium, Shadcn-style HTML report with physics-based graphs and search.
+- **Project Explorer**: Built-in file tree and source code viewer with syntax highlighting.
+- **Deep Dependency Analysis**: Tracks external libraries and visualizes which files use them ("Inverse Dependencies").
+- **Git Evolution**: Analyzes commit history to provide context on project velocity and recent changes.
 - **Multi-Language Support**:
   - JavaScript / TypeScript (AST-based)
   - Python (Regex/Heuristic-based)

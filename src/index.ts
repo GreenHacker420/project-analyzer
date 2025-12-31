@@ -141,7 +141,7 @@ program
                 }
 
                 if (!apiKey && providerType !== 'ollama') {
-                    console.log(chalk.red('\n⚠️  API Key is required for this provider.'));
+                    console.log(chalk.red('\  API Key is required for this provider.'));
                 }
 
                 if ((providerType === 'ollama') || apiKey) {
@@ -158,12 +158,10 @@ program
                         }
 
                         // Detailed Project Summary
-                        if (options.summary) {
-                            console.log(chalk.blue('\n🧠 Generating Project Summary...'));
-                            const fileList = Object.keys(analysis.files);
-                            projectSummary = await ai.generateProjectSummary(analysis.fileCount, topRisks, fileList);
-                            console.log(chalk.white(chalk.bold('\nProject Overview:\n') + projectSummary));
-                        }
+                        console.log(chalk.blue('\n🧠 Generating Project Summary...'));
+                        const fileList = Object.keys(analysis.files);
+                        projectSummary = await ai.generateProjectSummary(analysis.fileCount, topRisks, fileList);
+                        console.log(chalk.white(chalk.bold('\nProject Overview:\n') + projectSummary));
 
                         // Git Evolution Insight
                         if (gitStats) {
@@ -202,9 +200,9 @@ program
             console.log(chalk.green(`✅ HTML Graph saved to ${htmlPath}`));
 
             // Save Summary MD
-            if (projectSummary) {
+            if (projectSummary || gitInsight) {
                 const summaryPath = path.resolve('project-summary.md');
-                const content = `# Project Summary\n\n${projectSummary}\n\n## Evolution Insights\n\n${gitInsight}`;
+                const content = `# Project Summary\n\n${projectSummary || 'No summary generated.'}\n\n## Evolution Insights\n\n${gitInsight || 'No git composition analysis available.'}`;
                 await fs.writeFile(summaryPath, content);
                 console.log(chalk.green(`✅ Summary saved to ${summaryPath}`));
             }
