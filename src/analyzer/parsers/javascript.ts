@@ -10,6 +10,14 @@ export interface FunctionInfo {
     params: string[];
     doc?: string;
     code?: string;
+    kind?: string;
+}
+
+export interface MethodInfo {
+    name: string;
+    line: number;
+    params: string[];
+    kind?: string;
 }
 
 export interface ClassInfo {
@@ -18,6 +26,7 @@ export interface ClassInfo {
     superClass?: string;
     implements?: string[];
     methods: string[];
+    methodDetails?: MethodInfo[];
     doc?: string;
     code?: string;
 }
@@ -81,6 +90,12 @@ export function parseJS(content: string, filePath: string): FileAnalysis {
             FunctionDeclaration(path) {
                 handleFunctionDeclaration(path, content, analysis);
             },
+            VariableDeclarator(path) {
+                handleVariableFunction(path, content, analysis);
+            },
+            ObjectMethod(path) {
+                handleObjectMethod(path, content, analysis);
+            },
             ClassDeclaration(path) {
                 handleClassDeclaration(path, content, analysis);
             }
@@ -111,28 +126,46 @@ function handleExportDeclaration(path: any, analysis: FileAnalysis) {
 
 function handleFunctionDeclaration(path: any, content: string, analysis: FileAnalysis) {
     if (path.node.id && path.node.loc) {
-        const start = path.node.loc.start.line - 1;
-        const end = path.node.loc.end.line;
-        const code = content.split('\n').slice(start, end).join('\n');
-
-        const params = path.node.params.map((p: any) => {
-            if (t.isIdentifier(p)) return p.name;
-            if (t.isAssignmentPattern(p) && t.isIdentifier(p.left)) return p.left.name;
-            return 'arg';
-        });
-
-        const doc = path.node.leadingComments
-            ? path.node.leadingComments.map((c: any) => c.value.trim()).join('\n')
-            : undefined;
-
-        analysis.functions.push({
+        addFunction(analysis, {
             name: path.node.id.name,
             line: path.node.loc.start.line,
-            params: params,
-            doc: doc,
-            code: code
+            params: getParamNames(path.node.params),
+            doc: getLeadingDoc(path.node),
+            code: getNodeCode(path.node, content),
+            kind: path.node.async ? 'async function' : 'function'
         });
     }
+}
+
+function handleVariableFunction(path: any, content: string, analysis: FileAnalysis) {
+    const node = path.node;
+    if (!t.isIdentifier(node.id) || !node.init || !node.loc) return;
+    if (!t.isArrowFunctionExpression(node.init) && !t.isFunctionExpression(node.init)) return;
+
+    addFunction(analysis, {
+        name: node.id.name,
+        line: node.loc.start.line,
+        params: getParamNames(node.init.params),
+        doc: getLeadingDoc(node) || getLeadingDoc(path.parent),
+        code: getNodeCode(path.parent, content),
+        kind: t.isArrowFunctionExpression(node.init) ? 'arrow' : 'function expression'
+    });
+}
+
+function handleObjectMethod(path: any, content: string, analysis: FileAnalysis) {
+    const node = path.node;
+    if (!node.loc) return;
+    const name = getPropertyName(node.key);
+    if (!name) return;
+
+    addFunction(analysis, {
+        name,
+        line: node.loc.start.line,
+        params: getParamNames(node.params),
+        doc: getLeadingDoc(node),
+        code: getNodeCode(node, content),
+        kind: node.async ? 'async object method' : 'object method'
+    });
 }
 
 function handleClassDeclaration(path: any, content: string, analysis: FileAnalysis) {
@@ -168,14 +201,33 @@ function handleClassDeclaration(path: any, content: string, analysis: FileAnalys
         }
 
         const methods: string[] = [];
+        const methodDetails: MethodInfo[] = [];
         if (path.node.body && path.node.body.body) {
             path.node.body.body.forEach((member: any) => {
-                if (t.isClassMethod(member) || t.isClassPrivateMethod(member)) {
-                    if (t.isIdentifier(member.key)) {
-                        methods.push(member.key.name);
-                    } else if (t.isPrivateName(member.key) && t.isIdentifier(member.key.id)) {
-                        methods.push('#' + member.key.id.name);
-                    }
+                const isMethod = t.isClassMethod(member) || t.isClassPrivateMethod(member);
+                const isArrowProperty = (
+                    (t.isClassProperty(member) || t.isClassPrivateProperty(member)) &&
+                    member.value &&
+                    (t.isArrowFunctionExpression(member.value) || t.isFunctionExpression(member.value))
+                );
+
+                if (isMethod || isArrowProperty) {
+                    const name = getPropertyName(member.key);
+                    if (!name) return;
+                    const params = isMethod
+                        ? member.params
+                        : (member.value && (t.isArrowFunctionExpression(member.value) || t.isFunctionExpression(member.value)))
+                            ? member.value.params
+                            : [];
+                    const kind = isArrowProperty ? 'property' : ('kind' in member ? member.kind : 'method');
+
+                    methods.push(name);
+                    methodDetails.push({
+                        name,
+                        line: member.loc?.start.line || 0,
+                        params: getParamNames(params),
+                        kind
+                    });
                 }
             });
         }
@@ -190,9 +242,48 @@ function handleClassDeclaration(path: any, content: string, analysis: FileAnalys
             superClass: superClass,
             implements: implementsList.length > 0 ? implementsList : undefined,
             methods: methods,
+            methodDetails: methodDetails,
             doc: doc,
             code: code
         });
     }
 }
 
+function addFunction(analysis: FileAnalysis, fn: FunctionInfo) {
+    const exists = analysis.functions.some(existing => existing.name === fn.name && existing.line === fn.line);
+    if (!exists) {
+        analysis.functions.push(fn);
+    }
+}
+
+function getParamNames(params: any[]): string[] {
+    return params.map((p: any) => {
+        if (t.isIdentifier(p)) return p.name;
+        if (t.isAssignmentPattern(p) && t.isIdentifier(p.left)) return p.left.name;
+        if (t.isRestElement(p) && t.isIdentifier(p.argument)) return `...${p.argument.name}`;
+        if (t.isObjectPattern(p)) return '{}';
+        if (t.isArrayPattern(p)) return '[]';
+        if (t.isTSParameterProperty(p) && t.isIdentifier(p.parameter)) return p.parameter.name;
+        return 'arg';
+    });
+}
+
+function getPropertyName(key: any): string {
+    if (t.isIdentifier(key)) return key.name;
+    if (t.isStringLiteral(key) || t.isNumericLiteral(key)) return String(key.value);
+    if (t.isPrivateName(key) && t.isIdentifier(key.id)) return '#' + key.id.name;
+    return '';
+}
+
+function getLeadingDoc(node: any): string | undefined {
+    return node?.leadingComments
+        ? node.leadingComments.map((c: any) => c.value.trim()).join('\n')
+        : undefined;
+}
+
+function getNodeCode(node: any, content: string): string | undefined {
+    if (!node?.loc) return undefined;
+    const start = node.loc.start.line - 1;
+    const end = node.loc.end.line;
+    return content.split('\n').slice(start, end).join('\n');
+}

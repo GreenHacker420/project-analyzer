@@ -69,4 +69,37 @@ describe('JavaScript Parser', () => {
         const result = parseJS(code, 'test.ts');
         expect(result.functions[0].doc).toContain('This is a test function');
     });
+
+    it('should parse arrow functions, function expressions and object methods', () => {
+        const code = `
+            export const arrowHandler = async (request, reply) => reply.send();
+            const namedExpression = function (value = 1) { return value; };
+            const controller = {
+                list(req, reply) {
+                    return reply.send();
+                }
+            };
+        `;
+        const result = parseJS(code, 'test.ts');
+        expect(result.functions.map(fn => fn.name)).toEqual(expect.arrayContaining([
+            'arrowHandler',
+            'namedExpression',
+            'list'
+        ]));
+        expect(result.functions.find(fn => fn.name === 'arrowHandler')?.params).toEqual(['request', 'reply']);
+    });
+
+    it('should parse class property methods with line details', () => {
+        const code = `
+            class Controller {
+                handle = async (request, reply) => reply.send();
+            }
+        `;
+        const result = parseJS(code, 'test.ts');
+        expect(result.classes[0].methods).toContain('handle');
+        expect(result.classes[0].methodDetails?.[0]).toMatchObject({
+            name: 'handle',
+            params: ['request', 'reply']
+        });
+    });
 });

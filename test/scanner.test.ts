@@ -43,6 +43,21 @@ describe('Project Scanner Ignore List', () => {
         expect(relativeFiles).not.toContain(path.join('.git', 'config'));
     });
 
+    it('should ignore generated Projectify report artifacts', async () => {
+        await fs.outputFile(path.join(tempDir, 'analysis-report.json'), '{}');
+        await fs.outputFile(path.join(tempDir, 'analysis-report.html'), '<html></html>');
+        await fs.outputFile(path.join(tempDir, 'ai-context.md'), '# context');
+        await fs.outputFile(path.join(tempDir, 'project-summary.md'), '# summary');
+
+        const files = await scanProject({ path: tempDir });
+        const relativeFiles = files.map(f => path.relative(tempDir, f));
+
+        expect(relativeFiles).not.toContain('analysis-report.json');
+        expect(relativeFiles).not.toContain('analysis-report.html');
+        expect(relativeFiles).not.toContain('ai-context.md');
+        expect(relativeFiles).not.toContain('project-summary.md');
+    });
+
     it('should respect custom ignore options', async () => {
         await fs.outputFile(path.join(tempDir, 'src/custom-ignored.ts'), 'console.log("custom");');
 

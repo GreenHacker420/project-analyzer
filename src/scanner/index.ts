@@ -61,7 +61,11 @@ export async function scanProject(options: ScanOptions): Promise<string[]> {
         '**/yarn-error.log',
         '**/npm-debug.log',
         '**/pnpm-debug.log',
-        '**/.pnpm-store/**'
+        '**/.pnpm-store/**',
+        '**/analysis-report.json',
+        '**/analysis-report.html',
+        '**/ai-context.md',
+        '**/project-summary.md'
     ];
 
     const entries = await glob('**/*', {
@@ -79,4 +83,3 @@ export async function scanProject(options: ScanOptions): Promise<string[]> {
     // Filter for text files only (or meaningful code files)
     return entries.filter(isTextFile);
 }
-
