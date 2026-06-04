@@ -45,7 +45,27 @@ export class DependencyGraph {
                     this.addEdge(filePath, resolvedPath);
                 }
             });
+
+            this.addFastifyAutoloadEdges(filePath, fileData);
         });
+    }
+
+    private addFastifyAutoloadEdges(filePath: string, fileData: any) {
+        if (!fileData.content || !fileData.imports?.some((imp: string) => imp.includes('@fastify/autoload'))) {
+            return;
+        }
+
+        const autoloadDirRegex = /dir\s*:\s*join\(\s*__dirname\s*,\s*['"`]([^'"`]+)['"`]\s*\)/g;
+        let match: RegExpExecArray | null;
+
+        while ((match = autoloadDirRegex.exec(fileData.content)) !== null) {
+            const autoloadDir = path.resolve(path.dirname(filePath), match[1]);
+            this.nodes.forEach((_node, candidatePath) => {
+                if (candidatePath !== filePath && this.isPathInside(candidatePath, autoloadDir)) {
+                    this.addEdge(filePath, candidatePath);
+                }
+            });
+        }
     }
 
     private resolveImport(sourceFile: string, importPath: string): string | null {
@@ -175,6 +195,11 @@ export class DependencyGraph {
         return commonParts.length === 1 && commonParts[0] === ''
             ? path.sep
             : commonParts.join(path.sep) || path.sep;
+    }
+
+    private isPathInside(candidatePath: string, parentPath: string): boolean {
+        const relative = path.relative(parentPath, candidatePath);
+        return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative);
     }
 
     private addEdge(from: string, to: string) {

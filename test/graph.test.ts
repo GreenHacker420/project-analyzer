@@ -64,4 +64,33 @@ describe('DependencyGraph', () => {
         const graph = new DependencyGraph(analysis);
         expect(graph.getEdges().get(app)?.size).toBe(0);
     });
+
+    it('adds edges for Fastify autoload runtime-loaded directories', () => {
+        const root = path.join(__dirname, 'temp-graph-autoload');
+        const app = file(root, 'src/app.ts');
+        const routes = file(root, 'src/routes/users/index.ts');
+        const plugins = file(root, 'src/plugins/support.ts');
+        const packageJson = file(root, 'package.json');
+
+        const analysis: ProjectAnalysis = {
+            fileCount: 4,
+            dependencies: {},
+            files: {
+                [packageJson]: emptyFile(),
+                [app]: emptyFile(
+                    ['@fastify/autoload'],
+                    `
+                        await fastify.register(AutoLoad, { dir: join(__dirname, 'plugins') });
+                        await fastify.register(AutoLoad, { dir: join(__dirname, 'routes') });
+                    `
+                ),
+                [routes]: emptyFile(),
+                [plugins]: emptyFile()
+            }
+        };
+
+        const graph = new DependencyGraph(analysis);
+        expect(graph.getEdges().get(app)?.has(routes)).toBe(true);
+        expect(graph.getEdges().get(app)?.has(plugins)).toBe(true);
+    });
 });
