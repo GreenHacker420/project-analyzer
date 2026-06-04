@@ -23,10 +23,34 @@ describe('JavaScript Parser', () => {
         expect(result.functions[0].params).toEqual(['a', 'b']);
     });
 
-    it('should parse classes', () => {
-        const code = `class MyClass {}`;
+    it('should parse classes with extends, implements, methods, docs and code', () => {
+        const code = `
+            /**
+             * My custom controller class
+             */
+            class MyClass extends BaseController implements IController {
+                constructor() {
+                    super();
+                }
+                index(req, res) {
+                    return 'index';
+                }
+                #privateMethod() {
+                    return 'private';
+                }
+            }
+        `;
         const result = parseJS(code, 'test.ts');
-        expect(result.classes.map(c => c.name)).toContain('MyClass');
+        expect(result.classes).toHaveLength(1);
+        const cls = result.classes[0];
+        expect(cls.name).toBe('MyClass');
+        expect(cls.superClass).toBe('BaseController');
+        expect(cls.implements).toEqual(['IController']);
+        expect(cls.methods).toContain('constructor');
+        expect(cls.methods).toContain('index');
+        expect(cls.methods).toContain('#privateMethod');
+        expect(cls.doc).toContain('My custom controller class');
+        expect(cls.code).toContain('class MyClass extends BaseController');
     });
 
     it('should parse variable exports', () => {
