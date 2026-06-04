@@ -1,6 +1,6 @@
 {
   "name": "projectify-cli",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "description": "Project Analyzer using LangChain",
   "main": "dist/index.js",
   "bin": {

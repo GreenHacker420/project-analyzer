@@ -19,22 +19,68 @@ const program = new Command();
 program
     .name('projectify')
     .description('Projectify - Autonomous Code Analysis & Visualization')
-    .version('2.1.0');
-
-program
+    .version('2.1.2')
     .argument('[path]', 'Project path to analyze', '.')
     .option('--no-ai', 'Skip AI analysis')
     .option('--summary', 'Generate full project summary')
     .option('--provider <type>', 'AI Provider (openai, gemini, ollama)')
     .option('--model <name>', 'Model name (optional)')
+    .option('--ignore <patterns>', 'Comma-separated list of additional glob patterns to ignore')
+    .option('--all', 'Analyze all files and folders without interactive prompt')
     .action(async (projectPath, options) => {
         try {
             console.log(chalk.blue(`🚀 Starting analysis for: ${projectPath}`));
 
             // 1. Scan
             console.log(chalk.yellow('scanning files...'));
-            const files = await scanProject({ path: projectPath });
+            const scanOptions: any = { path: projectPath };
+            if (options.ignore) {
+                scanOptions.ignore = options.ignore.split(',').map((p: string) => p.trim());
+            }
+            let files = await scanProject(scanOptions);
             console.log(chalk.green(`found ${files.length} files.`));
+
+            if (files.length === 0) {
+                console.log(chalk.red('No files found to analyze.'));
+                process.exit(1);
+            }
+
+            // Filter files/directories interactively
+            if (!options.all && files.length > 0) {
+                const relativePaths = files.map(file => path.relative(projectPath, file));
+                const topLevelItems = Array.from(new Set(
+                    relativePaths.map(rPath => rPath.split(path.sep)[0])
+                )).sort();
+
+                if (topLevelItems.length > 1) {
+                    const answer = await inquirer.prompt([
+                        {
+                            type: 'checkbox',
+                            name: 'selected',
+                            message: 'Select files/folders to include in the analysis (Space to deselect/select, Enter to confirm):',
+                            choices: topLevelItems.map(item => ({
+                                name: item,
+                                value: item,
+                                checked: true
+                            }))
+                        }
+                    ]);
+
+                    const selectedSet = new Set(answer.selected);
+                    files = files.filter(file => {
+                        const rel = path.relative(projectPath, file);
+                        const topLevel = rel.split(path.sep)[0];
+                        return selectedSet.has(topLevel);
+                    });
+
+                    console.log(chalk.green(`filtered to ${files.length} files.`));
+
+                    if (files.length === 0) {
+                        console.log(chalk.red('No files selected for analysis. Exiting.'));
+                        process.exit(0);
+                    }
+                }
+            }
 
             // 2. Analyze
             console.log(chalk.yellow('parsing codebase...'));
