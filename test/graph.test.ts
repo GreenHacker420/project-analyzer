@@ -1,0 +1,67 @@
+import path from 'path';
+import { DependencyGraph } from '../src/graph';
+import { ProjectAnalysis } from '../src/analyzer';
+
+const file = (root: string, relativePath: string) => path.join(root, relativePath);
+
+const emptyFile = (imports: string[] = [], content = '') => ({
+    imports,
+    exports: [],
+    functions: [],
+    classes: [],
+    content
+});
+
+describe('DependencyGraph', () => {
+    it('resolves TypeScript path aliases from tsconfig paths', () => {
+        const root = path.join(__dirname, 'temp-graph-alias');
+        const app = file(root, 'src/app.ts');
+        const service = file(root, 'src/modules/users/users.service.ts');
+        const packageJson = file(root, 'package.json');
+        const tsconfig = file(root, 'tsconfig.json');
+
+        const analysis: ProjectAnalysis = {
+            fileCount: 4,
+            dependencies: {},
+            files: {
+                [packageJson]: emptyFile(),
+                [tsconfig]: emptyFile([], JSON.stringify({
+                    compilerOptions: {
+                        baseUrl: '.',
+                        paths: { '@/*': ['src/*'] }
+                    }
+                })),
+                [app]: emptyFile(['@/modules/users/users.service.js']),
+                [service]: emptyFile()
+            }
+        };
+
+        const graph = new DependencyGraph(analysis);
+        expect(graph.getEdges().get(app)?.has(service)).toBe(true);
+    });
+
+    it('does not treat external scoped packages as path aliases', () => {
+        const root = path.join(__dirname, 'temp-graph-scoped-package');
+        const app = file(root, 'src/app.ts');
+        const packageJson = file(root, 'package.json');
+        const tsconfig = file(root, 'tsconfig.json');
+
+        const analysis: ProjectAnalysis = {
+            fileCount: 3,
+            dependencies: {},
+            files: {
+                [packageJson]: emptyFile(),
+                [tsconfig]: emptyFile([], JSON.stringify({
+                    compilerOptions: {
+                        baseUrl: '.',
+                        paths: { '@/*': ['src/*'] }
+                    }
+                })),
+                [app]: emptyFile(['@fastify/autoload'])
+            }
+        };
+
+        const graph = new DependencyGraph(analysis);
+        expect(graph.getEdges().get(app)?.size).toBe(0);
+    });
+});
