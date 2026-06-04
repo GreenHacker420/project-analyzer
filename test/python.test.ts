@@ -28,7 +28,7 @@ def my_function():
     it('should parse classes', () => {
         const code = `class MyClass:`;
         const result = parsePython(code, 'test.py');
-        expect(result.classes).toContain('MyClass');
+        expect(result.classes.map(c => c.name)).toContain('MyClass');
         expect(result.exports).toContain('MyClass');
     });
 });

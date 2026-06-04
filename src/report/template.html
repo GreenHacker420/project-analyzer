@@ -154,8 +154,8 @@
 
         <!-- Center Tabs -->
         <div class="hidden md:flex items-center gap-8 text-sm uppercase tracking-wider">
-            <button class="nav-tab hover:text-white" onclick="switchView('network')">GRAPH</button>
-            <button class="nav-tab active" onclick="switchView('functions')">FUNCTIONS</button>
+            <button class="nav-tab active" onclick="switchView('network')">GRAPH</button>
+            <button class="nav-tab hover:text-white" onclick="switchView('functions')">FUNCTIONS</button>
             <button class="nav-tab hover:text-white" onclick="switchView('files')">FILES</button>
             <button class="nav-tab hover:text-white" onclick="switchView('dependencies')">DEPENDENCIES</button>
         </div>
@@ -331,7 +331,17 @@
 
         const options = {
             nodes: { borderWidth: 0, shadow: true, font: { face: 'JetBrains Mono', size: 12, color: '#a5f3fc', strokeWidth: 0, vadjust: -30 }, title: undefined },
-            edges: { width: 1, smooth: { type: 'continuous', roundness: 0.4 }, color: { inherit: false, color: 'rgba(30, 41, 59, 0.4)', highlight: '#38bdf8' }, arrows: { to: { enabled: true, scaleFactor: 0.5 } } },
+            edges: { 
+                width: 1.5, 
+                smooth: { type: 'continuous', roundness: 0.4 }, 
+                color: { 
+                    inherit: false, 
+                    color: 'rgba(56, 189, 248, 0.35)', 
+                    highlight: '#f472b6', 
+                    hover: 'rgba(56, 189, 248, 0.75)' 
+                }, 
+                arrows: { to: { enabled: true, scaleFactor: 0.7 } } 
+            },
             physics: { forceAtlas2Based: { gravitationalConstant: -50, centralGravity: 0.005, springLength: 200, springConstant: 0.08 }, maxVelocity: 50, solver: 'forceAtlas2Based', timestep: 0.35, stabilization: { enabled: true, iterations: 1000 } },
             interaction: { hover: true, tooltipDelay: 100, hideEdgesOnDrag: true, dragNodes: true, zoomView: true }
         };
@@ -359,10 +369,178 @@
             const container = document.getElementById('detail-content');
             document.getElementById('detail-type').innerText = "NODE DETAILS";
             document.getElementById('detail-title').innerText = node.label;
-            container.innerHTML = `<div class="grid grid-cols-2 gap-4"><div class="bg-zinc-900/50 p-4 rounded border border-zinc-800"><div class="text-xs text-zinc-500 uppercase tracking-widest mb-1">Impact</div><div class="text-2xl font-mono text-accent">${node.data.blastRadius}%</div></div><div class="bg-zinc-900/50 p-4 rounded border border-zinc-800"><div class="text-xs text-zinc-500 uppercase tracking-widest mb-1">References</div><div class="text-2xl font-mono text-secondary">${node.data.affectedFiles}</div></div></div><div><div class="text-xs text-zinc-500 uppercase tracking-widest mb-3 flex items-center gap-2"><span class="w-1.5 h-1.5 bg-primary rounded-full animate-pulse"></span>AI Analysis</div><div class="text-sm text-zinc-400 leading-relaxed font-light">High connectivity detected. Recommended to decouple dependencies.</div></div><div><div class="text-xs text-zinc-500 uppercase tracking-widest mb-3">Location</div><div class="text-sm font-mono text-zinc-300 bg-zinc-900/50 p-2 rounded">${node.id}</div></div>`;
+
+            // Get connections from vis-network graph
+            const nodeId = node.id;
+            const allEdges = edges.get();
+            const imports = allEdges.filter(e => e.from === nodeId).map(e => e.to);
+            const importedBy = allEdges.filter(e => e.to === nodeId).map(e => e.from);
+
+            const importsHtml = imports.map(targetId => {
+                const name = targetId.split('/').pop();
+                return `<span class="px-2 py-1 bg-zinc-900 border border-zinc-800 text-xs font-mono rounded cursor-pointer hover:border-primary/50 text-zinc-300 hover:text-white transition-colors" onclick="focusNode('${targetId}')">${name}</span>`;
+            }).join('') || '<span class="text-zinc-600 text-xs italic">None</span>';
+
+            const importedByHtml = importedBy.map(sourceId => {
+                const name = sourceId.split('/').pop();
+                return `<span class="px-2 py-1 bg-zinc-900 border border-zinc-800 text-xs font-mono rounded cursor-pointer hover:border-primary/50 text-zinc-300 hover:text-white transition-colors" onclick="focusNode('${sourceId}')">${name}</span>`;
+            }).join('') || '<span class="text-zinc-600 text-xs italic">None</span>';
+
+            // Get file data
+            const fileDetails = filesData[node.data.relativePath];
+
+            // Build Classes HTML
+            let classesHtml = '';
+            if (fileDetails && fileDetails.classes && fileDetails.classes.length > 0) {
+                classesHtml = fileDetails.classes.map(cls => {
+                    let extendText = cls.superClass ? `<span class="text-zinc-500 font-sans text-xs">extends</span> <span class="text-primary text-xs font-mono font-bold">${cls.superClass}</span>` : '';
+                    let implementsText = (cls.implements && cls.implements.length > 0) 
+                        ? `<span class="text-zinc-500 font-sans text-xs">implements</span> ${cls.implements.map(i => `<span class="text-secondary text-xs font-mono font-bold">${i}</span>`).join(', ')}` 
+                        : '';
+                    
+                    let methodsText = (cls.methods && cls.methods.length > 0)
+                        ? `<div class="mt-2 text-[11px] text-zinc-500">
+                             <span class="uppercase tracking-widest font-semibold font-mono text-[9px]">Methods:</span>
+                             <div class="flex flex-wrap gap-1 mt-1">
+                                 ${cls.methods.map(m => `<span class="px-1.5 py-0.5 bg-zinc-900 border border-zinc-800 text-[10px] text-zinc-400 font-mono rounded">${m}</span>`).join('')}
+                             </div>
+                           </div>`
+                        : '';
+
+                    let docText = cls.doc ? `<div class="mt-2 text-xs text-zinc-400 bg-black/30 p-2 rounded border border-white/5 font-sans whitespace-pre-wrap">${cls.doc}</div>` : '';
+                    
+                    let codeBtn = cls.code ? `
+                        <button class="text-[10px] text-zinc-500 hover:text-white flex items-center gap-1 font-mono transition-colors mt-2" onclick="toggleSnippet('cls-${cls.name}-${cls.line}')">
+                            &lt; SHOW SOURCE &gt;
+                        </button>
+                        <div id="cls-${cls.name}-${cls.line}" class="hidden mt-2">
+                            <pre class="language-javascript text-[11px] max-h-40 overflow-auto border border-zinc-800 p-2 rounded bg-zinc-950"><code class="language-javascript">${cls.code.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code></pre>
+                        </div>
+                    ` : '';
+
+                    return `
+                        <div class="bg-zinc-900/40 border border-zinc-800 p-3 rounded flex flex-col gap-1">
+                            <div class="flex flex-wrap items-center gap-1.5">
+                                <span class="px-1.5 py-0.5 rounded bg-pink-500/10 text-pink-400 border border-pink-500/20 text-[9px] uppercase tracking-wider font-bold">Class</span>
+                                <span class="text-zinc-200 font-mono font-bold text-sm break-all">${cls.name}</span>
+                                ${extendText}
+                                ${implementsText}
+                            </div>
+                            ${docText}
+                            ${methodsText}
+                            ${codeBtn}
+                        </div>
+                    `;
+                }).join('\n');
+            } else {
+                classesHtml = '<span class="text-zinc-600 text-xs italic">No classes defined.</span>';
+            }
+
+            // Build Functions HTML
+            let functionsHtml = '';
+            if (fileDetails && fileDetails.functions && fileDetails.functions.length > 0) {
+                functionsHtml = fileDetails.functions.map(fn => {
+                    let docText = fn.doc ? `<div class="mt-2 text-xs text-zinc-400 bg-black/30 p-2 rounded border border-white/5 font-sans whitespace-pre-wrap">${fn.doc}</div>` : '';
+                    let codeBtn = fn.code ? `
+                        <button class="text-[10px] text-zinc-500 hover:text-white flex items-center gap-1 font-mono transition-colors mt-2" onclick="toggleSnippet('fn-${fn.name}-${fn.line}')">
+                            &lt; SHOW SOURCE &gt;
+                        </button>
+                        <div id="fn-${fn.name}-${fn.line}" class="hidden mt-2">
+                            <pre class="language-javascript text-[11px] max-h-40 overflow-auto border border-zinc-800 p-2 rounded bg-zinc-950"><code class="language-javascript">${fn.code.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code></pre>
+                        </div>
+                    ` : '';
+
+                    return `
+                        <div class="bg-zinc-900/40 border border-zinc-800 p-3 rounded flex flex-col gap-1">
+                            <div class="flex justify-between items-start">
+                                <div class="flex flex-wrap items-center gap-1.5">
+                                    <span class="px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 text-[9px] uppercase tracking-wider font-bold">Function</span>
+                                    <span class="text-zinc-200 font-mono font-bold text-sm break-all">${fn.name}</span>
+                                </div>
+                                <span class="text-[10px] text-zinc-500 font-mono">L${fn.line}</span>
+                            </div>
+                            <div class="text-[10px] text-zinc-400 font-mono mt-1">
+                                Params: ${fn.params.map(p => `<span class="px-1 bg-zinc-850 rounded text-zinc-300 font-mono">${p}</span>`).join(', ') || '<span class="text-zinc-600 italic">None</span>'}
+                            </div>
+                            ${docText}
+                            ${codeBtn}
+                        </div>
+                    `;
+                }).join('\n');
+            } else {
+                functionsHtml = '<span class="text-zinc-600 text-xs italic">No functions defined.</span>';
+            }
+
+            container.innerHTML = `
+                <!-- Metrics -->
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="bg-zinc-900/50 p-4 rounded border border-zinc-800">
+                        <div class="text-xs text-zinc-500 uppercase tracking-widest mb-1">Impact</div>
+                        <div class="text-2xl font-mono text-accent">${node.data.blastRadius}%</div>
+                    </div>
+                    <div class="bg-zinc-900/50 p-4 rounded border border-zinc-800">
+                        <div class="text-xs text-zinc-500 uppercase tracking-widest mb-1">References</div>
+                        <div class="text-2xl font-mono text-secondary">${node.data.affectedFiles}</div>
+                    </div>
+                </div>
+
+                <!-- Location -->
+                <div>
+                    <div class="text-xs text-zinc-500 uppercase tracking-widest mb-2">Location</div>
+                    <div class="text-sm font-mono text-zinc-300 bg-zinc-900/50 p-2 rounded break-all select-all">${node.id}</div>
+                </div>
+
+                <!-- Connections -->
+                <div class="space-y-4">
+                    <div class="text-xs text-zinc-500 uppercase tracking-widest border-b border-zinc-800 pb-2">Connections</div>
+                    <div>
+                        <div class="text-[10px] text-zinc-500 uppercase tracking-widest mb-1.5">Imports (Outgoing)</div>
+                        <div class="flex flex-wrap gap-1.5">${importsHtml}</div>
+                    </div>
+                    <div class="mt-3">
+                        <div class="text-[10px] text-zinc-500 uppercase tracking-widest mb-1.5">Imported By (Incoming)</div>
+                        <div class="flex flex-wrap gap-1.5">${importedByHtml}</div>
+                    </div>
+                </div>
+
+                <!-- Classes -->
+                <div class="space-y-3">
+                    <div class="text-xs text-zinc-500 uppercase tracking-widest border-b border-zinc-800 pb-2">Classes</div>
+                    <div class="space-y-3">${classesHtml}</div>
+                </div>
+
+                <!-- Functions -->
+                <div class="space-y-3">
+                    <div class="text-xs text-zinc-500 uppercase tracking-widest border-b border-zinc-800 pb-2">Functions</div>
+                    <div class="space-y-3">${functionsHtml}</div>
+                </div>
+            `;
+
             document.getElementById('details-panel').classList.remove('translate-x-full');
             document.getElementById('details-panel').classList.remove('hidden');
         }
+
+        window.toggleSnippet = (id) => {
+            const el = document.getElementById(id);
+            if (el) {
+                if (el.classList.contains('hidden')) {
+                    el.classList.remove('hidden');
+                    Prism.highlightAllUnder(el);
+                } else {
+                    el.classList.add('hidden');
+                }
+            }
+        };
+
+        window.focusNode = (nodeId) => {
+            const found = nodes.get(nodeId);
+            if (found) {
+                switchView('network');
+                network.focus(nodeId, { scale: 1.5, animation: { duration: 1000 } });
+                network.selectNodes([nodeId]);
+                openNodeDetails(found);
+            }
+        };
 
         function openFunctionDetails(fn) {
             const container = document.getElementById('detail-content');

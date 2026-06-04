@@ -26,7 +26,7 @@ describe('JavaScript Parser', () => {
     it('should parse classes', () => {
         const code = `class MyClass {}`;
         const result = parseJS(code, 'test.ts');
-        expect(result.classes).toContain('MyClass');
+        expect(result.classes.map(c => c.name)).toContain('MyClass');
     });
 
     it('should parse variable exports', () => {

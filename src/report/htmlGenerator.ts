@@ -18,6 +18,7 @@ export async function generateHtmlReport(
     outputPath: string,
     gitStats?: any
 ) {
+    const absoluteProjectPath = path.resolve(projectPath);
     const nodes: any[] = [];
     const edges: any[] = [];
     const topRisks = graph.getTopBlastRadius(10);
@@ -41,6 +42,11 @@ export async function generateHtmlReport(
             size = 25;
         }
 
+        let relPath = path.relative(absoluteProjectPath, node.id);
+        if (path.sep === '\\') {
+            relPath = relPath.replace(/\\/g, '/');
+        }
+
         nodes.push({
             id: node.id,
             label: path.basename(node.id),
@@ -56,6 +62,7 @@ export async function generateHtmlReport(
             shadow: { enabled: true, color: shadowColor, size: 15, x: 0, y: 0 },
             data: {
                 fullPath: node.id,
+                relativePath: relPath,
                 blastRadius: node.blastRadius.toFixed(2),
                 affectedFiles: node.affectedFiles,
                 inDegree: node.inDegree,
@@ -69,10 +76,14 @@ export async function generateHtmlReport(
             edges.push({
                 from: source,
                 to: target,
-                arrows: 'to',
-                color: { color: '#1e293b', opacity: 0.2, highlight: '#38bdf8' }, // Slate-800
+                arrows: { to: { enabled: true, scaleFactor: 0.7 } },
+                color: { 
+                    color: 'rgba(56, 189, 248, 0.35)', 
+                    highlight: '#f472b6', 
+                    hover: 'rgba(56, 189, 248, 0.75)' 
+                },
                 dashes: false,
-                width: 1
+                width: 1.5
             });
         });
     });
@@ -80,7 +91,6 @@ export async function generateHtmlReport(
     // Aggregate functions for the view
     const functionsList: any[] = [];
     const relativeFiles: Record<string, any> = {};
-    const absoluteProjectPath = path.resolve(projectPath);
 
     Object.entries(analysis.files).forEach(([file, data]) => {
         // Normalize path for frontend (relative + forward slashes)
