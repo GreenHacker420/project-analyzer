@@ -12,35 +12,6 @@ export interface ScanOptions {
 export async function scanProject(options: ScanOptions): Promise<string[]> {
     const rootPath = path.resolve(options.path);
 
-    // Read and respect .gitignore patterns if available
-    let gitignorePatterns: string[] = [];
-    try {
-        const gitignorePath = path.join(rootPath, '.gitignore');
-        if (await fs.pathExists(gitignorePath)) {
-            const gitignoreContent = await fs.readFile(gitignorePath, 'utf-8');
-            gitignorePatterns = gitignoreContent
-                .split(/\r?\n/)
-                .map(line => line.trim())
-                .filter(line => line && !line.startsWith('#'))
-                .reduce((acc: string[], line) => {
-                    let pattern = line;
-                    if (pattern.startsWith('/')) {
-                        pattern = pattern.slice(1);
-                    }
-                    if (pattern.endsWith('/')) {
-                        pattern = pattern.slice(0, -1);
-                    }
-                    if (pattern) {
-                        acc.push(`**/${pattern}`);
-                        acc.push(`**/${pattern}/**`);
-                    }
-                    return acc;
-                }, []);
-        }
-    } catch (error) {
-        console.warn('Warning: Could not parse .gitignore file:', error);
-    }
-
     const defaultIgnore = [
         '**/node_modules/**',
         '**/dist/**',
@@ -69,6 +40,44 @@ export async function scanProject(options: ScanOptions): Promise<string[]> {
         '**/ai-context-domains/**',
         '**/project-summary.md'
     ];
+
+    // Read and respect .gitignore patterns recursively if available
+    let gitignorePatterns: string[] = [];
+    try {
+        const gitignoreFiles = await glob('**/.gitignore', {
+            cwd: rootPath,
+            dot: true,
+            absolute: true,
+            ignore: defaultIgnore
+        });
+
+        for (const gitignorePath of gitignoreFiles) {
+            const relDir = path.relative(rootPath, path.dirname(gitignorePath));
+            const gitignoreContent = await fs.readFile(gitignorePath, 'utf-8');
+            const patterns = gitignoreContent
+                .split(/\r?\n/)
+                .map(line => line.trim())
+                .filter(line => line && !line.startsWith('#'))
+                .reduce((acc: string[], line) => {
+                    let pattern = line;
+                    if (pattern.startsWith('/')) {
+                        pattern = pattern.slice(1);
+                    }
+                    if (pattern.endsWith('/')) {
+                        pattern = pattern.slice(0, -1);
+                    }
+                    if (pattern) {
+                        const prefix = relDir ? `${relDir}/` : '';
+                        acc.push(`**/${prefix}${pattern}`);
+                        acc.push(`**/${prefix}${pattern}/**`);
+                    }
+                    return acc;
+                }, []);
+            gitignorePatterns.push(...patterns);
+        }
+    } catch (error) {
+        console.warn('Warning: Could not parse .gitignore files:', error);
+    }
 
     const entries = await glob('**/*', {
         cwd: rootPath,

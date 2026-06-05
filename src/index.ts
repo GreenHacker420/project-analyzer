@@ -19,7 +19,7 @@ const program = new Command();
 program
     .name('projectify')
     .description('Projectify - Autonomous Code Analysis & Visualization')
-    .version('2.1.5')
+    .version('2.1.6')
     .argument('[path]', 'Project path to analyze', '.')
     .option('--no-ai', 'Skip AI analysis')
     .option('--summary', 'Generate full project summary')
@@ -261,10 +261,54 @@ program
                 console.log(chalk.green(`✅ Summary saved to ${summaryPath}`));
             }
 
+            // Ensure generated files are in .gitignore
+            await ensureGitignore(projectPath);
+
         } catch (error) {
             console.error(chalk.red('Analysis failed:'), error);
             process.exit(1);
         }
     });
+
+async function ensureGitignore(projectPath: string) {
+    try {
+        const gitignorePath = path.join(path.resolve(projectPath), '.gitignore');
+        const patternsToIgnore = [
+            'analysis-report.json',
+            'analysis-report.html',
+            'ai-context.md',
+            'project-summary.md'
+        ];
+
+        let content = '';
+        if (await fs.pathExists(gitignorePath)) {
+            content = await fs.readFile(gitignorePath, 'utf-8');
+        }
+
+        const lines = content.split(/\r?\n/).map(line => line.trim());
+        const missingPatterns = patternsToIgnore.filter(pattern => {
+            return !lines.some(line => {
+                if (line.startsWith('#')) return false;
+                const cleanLine = line.replace(/^\//, '').replace(/\/$/, '').replace(/^\*\*\//, '');
+                return cleanLine === pattern;
+            });
+        });
+
+        if (missingPatterns.length > 0) {
+            let newContent = content;
+            if (newContent && !newContent.endsWith('\n')) {
+                newContent += '\n';
+            }
+            newContent += '\n# Projectify reports\n';
+            missingPatterns.forEach(pattern => {
+                newContent += `${pattern}\n`;
+            });
+            await fs.writeFile(gitignorePath, newContent, 'utf-8');
+            console.log(chalk.green(`✅ Added reports to ${gitignorePath}`));
+        }
+    } catch (e) {
+        console.warn(`⚠️  Failed to update .gitignore: ${e}`);
+    }
+}
 
 program.parse();

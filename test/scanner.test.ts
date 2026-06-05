@@ -83,4 +83,16 @@ describe('Project Scanner Ignore List', () => {
         expect(relativeFiles).toContain(path.join('src', 'index.ts'));
         expect(relativeFiles).not.toContain(path.join('src', 'git-ignored.ts'));
     });
+
+    it('should respect nested .gitignore files recursively', async () => {
+        await fs.outputFile(path.join(tempDir, 'backend/src/git-ignored.ts'), 'console.log("git-ignored");');
+        await fs.outputFile(path.join(tempDir, 'backend/src/index.ts'), 'console.log("index");');
+        await fs.outputFile(path.join(tempDir, 'backend/.gitignore'), 'src/git-ignored.ts\n');
+
+        const files = await scanProject({ path: tempDir });
+        const relativeFiles = files.map(f => path.relative(tempDir, f));
+
+        expect(relativeFiles).toContain(path.join('backend', 'src', 'index.ts'));
+        expect(relativeFiles).not.toContain(path.join('backend', 'src', 'git-ignored.ts'));
+    });
 });
