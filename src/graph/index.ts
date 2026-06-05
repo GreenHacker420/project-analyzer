@@ -15,7 +15,7 @@ export class DependencyGraph {
     private edges: Map<string, Set<string>> = new Map(); // From -> Set<To>
     private reverseEdges: Map<string, Set<string>> = new Map(); // To -> Set<From>
     private projectRoot: string;
-    private pathAliases: Array<{ prefix: string; target: string }> = [];
+    private pathAliases: Array<{ prefix: string; target: string; configDir: string }> = [];
 
     constructor(private analysis: ProjectAnalysis) {
         this.projectRoot = this.detectProjectRoot();
@@ -78,10 +78,12 @@ export class DependencyGraph {
 
         // 2. Check TypeScript/JavaScript path aliases from tsconfig/jsconfig.
         for (const alias of this.pathAliases) {
-            if (importPath.startsWith(alias.prefix)) {
-                const suffix = importPath.slice(alias.prefix.length);
-                const resolved = this.resolveCandidate(path.resolve(alias.target, suffix));
-                if (resolved) return resolved;
+            if (this.isPathInside(sourceFile, alias.configDir)) {
+                if (importPath.startsWith(alias.prefix)) {
+                    const suffix = importPath.slice(alias.prefix.length);
+                    const resolved = this.resolveCandidate(path.resolve(alias.target, suffix));
+                    if (resolved) return resolved;
+                }
             }
         }
 
@@ -119,38 +121,42 @@ export class DependencyGraph {
             .reduce((common, current) => this.commonPath(common, current));
     }
 
-    private loadPathAliases(): Array<{ prefix: string; target: string }> {
-        const aliases: Array<{ prefix: string; target: string }> = [];
-        const configFile = Object.entries(this.analysis.files)
-            .find(([file]) => ['tsconfig.json', 'jsconfig.json'].includes(path.basename(file)));
+    private loadPathAliases(): Array<{ prefix: string; target: string; configDir: string }> {
+        const aliases: Array<{ prefix: string; target: string; configDir: string }> = [];
+        const configFiles = Object.entries(this.analysis.files)
+            .filter(([file]) => ['tsconfig.json', 'jsconfig.json'].includes(path.basename(file)));
 
-        if (!configFile || !configFile[1].content) return aliases;
+        configFiles.forEach(([configFile, fileData]) => {
+            if (!fileData.content) return;
 
-        try {
-            const config = JSON.parse(configFile[1].content);
-            const compilerOptions = config.compilerOptions || {};
-            const baseUrl = compilerOptions.baseUrl || '.';
-            const paths = compilerOptions.paths || {};
-            const configDir = path.dirname(configFile[0]);
-            const basePath = path.resolve(configDir, baseUrl);
+            try {
+                const config = JSON.parse(fileData.content);
+                const compilerOptions = config.compilerOptions || {};
+                const baseUrl = compilerOptions.baseUrl || '.';
+                const paths = compilerOptions.paths || {};
+                const configDir = path.dirname(configFile);
+                const basePath = path.resolve(configDir, baseUrl);
 
-            Object.entries(paths).forEach(([aliasPattern, targets]) => {
-                if (!Array.isArray(targets) || targets.length === 0) return;
+                Object.entries(paths).forEach(([aliasPattern, targets]) => {
+                    if (!Array.isArray(targets) || targets.length === 0) return;
 
-                const aliasPrefix = aliasPattern.replace(/\*.*$/, '');
-                const targetPrefix = String(targets[0]).replace(/\*.*$/, '');
-                if (!aliasPrefix || !targetPrefix) return;
+                    const aliasPrefix = aliasPattern.replace(/\*.*$/, '');
+                    const targetPrefix = String(targets[0]).replace(/\*.*$/, '');
+                    if (!aliasPrefix || !targetPrefix) return;
 
-                aliases.push({
-                    prefix: aliasPrefix,
-                    target: path.resolve(basePath, targetPrefix)
+                    aliases.push({
+                        prefix: aliasPrefix,
+                        target: path.resolve(basePath, targetPrefix),
+                        configDir
+                    });
                 });
-            });
-        } catch (error: any) {
-            console.warn(`⚠️  Failed to parse path aliases: ${error.message || error}`);
-        }
+            } catch (error: any) {
+                console.warn(`⚠️  Failed to parse path aliases in ${configFile}: ${error.message || error}`);
+            }
+        });
 
-        return aliases;
+        // Sort by configDir length descending so that more specific configs are checked first
+        return aliases.sort((a, b) => b.configDir.length - a.configDir.length);
     }
 
     private resolveCandidate(basePath: string): string | null {

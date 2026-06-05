@@ -93,4 +93,46 @@ describe('DependencyGraph', () => {
         expect(graph.getEdges().get(app)?.has(routes)).toBe(true);
         expect(graph.getEdges().get(app)?.has(plugins)).toBe(true);
     });
+
+    it('resolves multiple TypeScript path aliases for nested sub-projects correctly', () => {
+        const root = path.join(__dirname, 'temp-multi-graph');
+        const adminApp = file(root, 'admin/src/app.ts');
+        const adminService = file(root, 'admin/src/services/admin.service.ts');
+        const adminTsconfig = file(root, 'admin/tsconfig.json');
+
+        const backendApp = file(root, 'backend/src/app.ts');
+        const backendService = file(root, 'backend/src/services/backend.service.ts');
+        const backendTsconfig = file(root, 'backend/tsconfig.json');
+
+        const analysis: ProjectAnalysis = {
+            fileCount: 6,
+            dependencies: {},
+            files: {
+                [adminTsconfig]: emptyFile([], JSON.stringify({
+                    compilerOptions: {
+                        baseUrl: '.',
+                        paths: { '@/*': ['src/*'] }
+                    }
+                })),
+                [adminApp]: emptyFile(['@/services/admin.service.js']),
+                [adminService]: emptyFile(),
+                [backendTsconfig]: emptyFile([], JSON.stringify({
+                    compilerOptions: {
+                        baseUrl: '.',
+                        paths: { '@/*': ['src/*'] }
+                    }
+                })),
+                [backendApp]: emptyFile(['@/services/backend.service.js']),
+                [backendService]: emptyFile()
+            }
+        };
+
+        const graph = new DependencyGraph(analysis);
+        expect(graph.getEdges().get(adminApp)?.has(adminService)).toBe(true);
+        expect(graph.getEdges().get(backendApp)?.has(backendService)).toBe(true);
+        
+        // Ensure no cross-pollution of aliases
+        expect(graph.getEdges().get(adminApp)?.has(backendService)).toBe(false);
+        expect(graph.getEdges().get(backendApp)?.has(adminService)).toBe(false);
+    });
 });
