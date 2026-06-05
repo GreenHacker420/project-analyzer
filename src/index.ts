@@ -19,7 +19,7 @@ const program = new Command();
 program
     .name('projectify')
     .description('Projectify - Autonomous Code Analysis & Visualization')
-    .version('2.1.4')
+    .version('2.1.5')
     .argument('[path]', 'Project path to analyze', '.')
     .option('--no-ai', 'Skip AI analysis')
     .option('--summary', 'Generate full project summary')
