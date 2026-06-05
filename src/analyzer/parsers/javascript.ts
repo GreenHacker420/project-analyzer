@@ -18,6 +18,20 @@ export interface MethodInfo {
     line: number;
     params: string[];
     kind?: string;
+    doc?: string;
+}
+
+export interface TypeInfo {
+    name: string;
+    line: number;
+    kind: 'interface' | 'type' | 'enum';
+    doc?: string;
+}
+
+export interface CallInfo {
+    caller: string;
+    callee: string;
+    line: number;
 }
 
 export interface ClassInfo {
@@ -36,6 +50,8 @@ export interface FileAnalysis {
     exports: string[];
     functions: FunctionInfo[];
     classes: ClassInfo[];
+    types?: TypeInfo[];
+    calls?: CallInfo[];
     content?: string;
     language?: string;
     size?: number;
@@ -46,7 +62,9 @@ export function parseJS(content: string, filePath: string): FileAnalysis {
         imports: [],
         exports: [],
         functions: [],
-        classes: []
+        classes: [],
+        types: [],
+        calls: []
     };
 
     try {
@@ -80,6 +98,8 @@ export function parseJS(content: string, filePath: string): FileAnalysis {
             ]
         });
 
+        const symbolStack: string[] = [];
+
         traverse(ast, {
             ImportDeclaration(path) {
                 analysis.imports.push(path.node.source.value);
@@ -87,17 +107,79 @@ export function parseJS(content: string, filePath: string): FileAnalysis {
             ExportNamedDeclaration(path) {
                 handleExportDeclaration(path, analysis);
             },
-            FunctionDeclaration(path) {
-                handleFunctionDeclaration(path, content, analysis);
+            FunctionDeclaration: {
+                enter(path) {
+                    handleFunctionDeclaration(path, content, analysis);
+                    symbolStack.push(getFunctionDeclarationName(path.node));
+                },
+                exit() {
+                    symbolStack.pop();
+                }
             },
-            VariableDeclarator(path) {
-                handleVariableFunction(path, content, analysis);
+            VariableDeclarator: {
+                enter(path) {
+                    const name = handleVariableFunction(path, content, analysis);
+                    if (name) symbolStack.push(name);
+                },
+                exit(path) {
+                    const node = path.node;
+                    if (
+                        t.isIdentifier(node.id) &&
+                        node.init &&
+                        (t.isArrowFunctionExpression(node.init) || t.isFunctionExpression(node.init))
+                    ) {
+                        symbolStack.pop();
+                    }
+                }
             },
-            ObjectMethod(path) {
-                handleObjectMethod(path, content, analysis);
+            ObjectMethod: {
+                enter(path) {
+                    const name = handleObjectMethod(path, content, analysis);
+                    if (name) symbolStack.push(name);
+                },
+                exit(path) {
+                    if (getPropertyName(path.node.key)) symbolStack.pop();
+                }
             },
             ClassDeclaration(path) {
                 handleClassDeclaration(path, content, analysis);
+            },
+            ClassMethod: {
+                enter(path) {
+                    const name = getClassMemberSymbolName(path);
+                    if (name) symbolStack.push(name);
+                },
+                exit(path) {
+                    if (getClassMemberSymbolName(path)) symbolStack.pop();
+                }
+            },
+            ClassPrivateMethod: {
+                enter(path) {
+                    const name = getClassMemberSymbolName(path);
+                    if (name) symbolStack.push(name);
+                },
+                exit(path) {
+                    if (getClassMemberSymbolName(path)) symbolStack.pop();
+                }
+            },
+            CallExpression(path) {
+                const caller = symbolStack[symbolStack.length - 1];
+                const callee = getCalleeName(path.node.callee);
+                if (!caller || !callee || !path.node.loc) return;
+                addCall(analysis, {
+                    caller,
+                    callee,
+                    line: path.node.loc.start.line
+                });
+            },
+            TSInterfaceDeclaration(path) {
+                addType(analysis, path.node.id.name, path.node.loc?.start.line, 'interface', getLeadingDoc(path.node) || getLeadingDoc(path.parent));
+            },
+            TSTypeAliasDeclaration(path) {
+                addType(analysis, path.node.id.name, path.node.loc?.start.line, 'type', getLeadingDoc(path.node) || getLeadingDoc(path.parent));
+            },
+            TSEnumDeclaration(path) {
+                addType(analysis, path.node.id.name, path.node.loc?.start.line, 'enum', getLeadingDoc(path.node) || getLeadingDoc(path.parent));
             }
         });
 
@@ -120,8 +202,25 @@ function handleExportDeclaration(path: any, analysis: FileAnalysis) {
             });
         } else if (t.isClassDeclaration(path.node.declaration) && path.node.declaration.id) {
             analysis.exports.push(path.node.declaration.id.name);
+        } else if (
+            (t.isTSInterfaceDeclaration(path.node.declaration) ||
+                t.isTSTypeAliasDeclaration(path.node.declaration) ||
+                t.isTSEnumDeclaration(path.node.declaration)) &&
+            path.node.declaration.id
+        ) {
+            analysis.exports.push(path.node.declaration.id.name);
         }
     }
+
+    path.node.specifiers?.forEach((specifier: any) => {
+        const exported = specifier.exported;
+        if (t.isIdentifier(exported)) analysis.exports.push(exported.name);
+        if (t.isStringLiteral(exported)) analysis.exports.push(exported.value);
+    });
+}
+
+function getFunctionDeclarationName(node: any): string {
+    return node.id?.name || '<anonymous>';
 }
 
 function handleFunctionDeclaration(path: any, content: string, analysis: FileAnalysis) {
@@ -137,7 +236,7 @@ function handleFunctionDeclaration(path: any, content: string, analysis: FileAna
     }
 }
 
-function handleVariableFunction(path: any, content: string, analysis: FileAnalysis) {
+function handleVariableFunction(path: any, content: string, analysis: FileAnalysis): string | undefined {
     const node = path.node;
     if (!t.isIdentifier(node.id) || !node.init || !node.loc) return;
     if (!t.isArrowFunctionExpression(node.init) && !t.isFunctionExpression(node.init)) return;
@@ -150,9 +249,11 @@ function handleVariableFunction(path: any, content: string, analysis: FileAnalys
         code: getNodeCode(path.parent, content),
         kind: t.isArrowFunctionExpression(node.init) ? 'arrow' : 'function expression'
     });
+
+    return node.id.name;
 }
 
-function handleObjectMethod(path: any, content: string, analysis: FileAnalysis) {
+function handleObjectMethod(path: any, content: string, analysis: FileAnalysis): string | undefined {
     const node = path.node;
     if (!node.loc) return;
     const name = getPropertyName(node.key);
@@ -166,6 +267,8 @@ function handleObjectMethod(path: any, content: string, analysis: FileAnalysis) 
         code: getNodeCode(node, content),
         kind: node.async ? 'async object method' : 'object method'
     });
+
+    return name;
 }
 
 function handleClassDeclaration(path: any, content: string, analysis: FileAnalysis) {
@@ -226,15 +329,14 @@ function handleClassDeclaration(path: any, content: string, analysis: FileAnalys
                         name,
                         line: member.loc?.start.line || 0,
                         params: getParamNames(params),
-                        kind
+                        kind,
+                        doc: getLeadingDoc(member)
                     });
                 }
             });
         }
 
-        const doc = path.node.leadingComments
-            ? path.node.leadingComments.map((c: any) => c.value.trim()).join('\n')
-            : undefined;
+        const doc = getLeadingDoc(path.node);
 
         analysis.classes.push({
             name: path.node.id.name,
@@ -254,6 +356,23 @@ function addFunction(analysis: FileAnalysis, fn: FunctionInfo) {
     if (!exists) {
         analysis.functions.push(fn);
     }
+}
+
+function addType(analysis: FileAnalysis, name: string, line: number | undefined, kind: TypeInfo['kind'], doc?: string) {
+    if (!analysis.types) analysis.types = [];
+    if (!analysis.types.some(type => type.name === name && type.line === line)) {
+        analysis.types.push({ name, line: line || 0, kind, doc });
+    }
+}
+
+function addCall(analysis: FileAnalysis, call: CallInfo) {
+    if (!analysis.calls) analysis.calls = [];
+    const exists = analysis.calls.some(existing =>
+        existing.caller === call.caller &&
+        existing.callee === call.callee &&
+        existing.line === call.line
+    );
+    if (!exists) analysis.calls.push(call);
 }
 
 function getParamNames(params: any[]): string[] {
@@ -276,9 +395,11 @@ function getPropertyName(key: any): string {
 }
 
 function getLeadingDoc(node: any): string | undefined {
-    return node?.leadingComments
-        ? node.leadingComments.map((c: any) => c.value.trim()).join('\n')
-        : undefined;
+    if (!node?.leadingComments) return undefined;
+    const docs = node.leadingComments
+        .filter((comment: any) => String(comment.value || '').trim().startsWith('*'))
+        .map((comment: any) => cleanDocComment(comment.value));
+    return docs.length > 0 ? docs.join('\n') : undefined;
 }
 
 function getNodeCode(node: any, content: string): string | undefined {
@@ -286,4 +407,43 @@ function getNodeCode(node: any, content: string): string | undefined {
     const start = node.loc.start.line - 1;
     const end = node.loc.end.line;
     return content.split('\n').slice(start, end).join('\n');
+}
+
+function cleanDocComment(value: string): string {
+    return value
+        .split(/\r?\n/)
+        .map(line => line.replace(/^\s*\* ?/, '').trim())
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function getClassMemberSymbolName(path: any): string | undefined {
+    const memberName = getPropertyName(path.node.key);
+    if (!memberName) return undefined;
+
+    const classPath = path.findParent((parent: any) => parent.isClassDeclaration?.());
+    const className = classPath?.node?.id?.name;
+    return className ? `${className}.${memberName}` : memberName;
+}
+
+function getCalleeName(callee: any): string {
+    if (t.isIdentifier(callee)) return callee.name;
+    if (t.isThisExpression(callee)) return 'this';
+    if (t.isSuper(callee)) return 'super';
+    if (t.isMemberExpression(callee) || t.isOptionalMemberExpression(callee)) {
+        const objectName = getCalleeName(callee.object);
+        const propertyName = callee.computed
+            ? getComputedPropertyName(callee.property)
+            : getPropertyName(callee.property);
+        return [objectName, propertyName].filter(Boolean).join('.');
+    }
+    if (t.isCallExpression(callee)) return getCalleeName(callee.callee);
+    return '';
+}
+
+function getComputedPropertyName(property: any): string {
+    if (t.isStringLiteral(property) || t.isNumericLiteral(property)) return String(property.value);
+    if (t.isIdentifier(property)) return property.name;
+    return '[]';
 }

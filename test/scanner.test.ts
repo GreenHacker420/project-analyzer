@@ -47,6 +47,7 @@ describe('Project Scanner Ignore List', () => {
         await fs.outputFile(path.join(tempDir, 'analysis-report.json'), '{}');
         await fs.outputFile(path.join(tempDir, 'analysis-report.html'), '<html></html>');
         await fs.outputFile(path.join(tempDir, 'ai-context.md'), '# context');
+        await fs.outputFile(path.join(tempDir, 'ai-context-index.md'), '# index');
         await fs.outputFile(path.join(tempDir, 'project-summary.md'), '# summary');
 
         const files = await scanProject({ path: tempDir });
@@ -55,6 +56,7 @@ describe('Project Scanner Ignore List', () => {
         expect(relativeFiles).not.toContain('analysis-report.json');
         expect(relativeFiles).not.toContain('analysis-report.html');
         expect(relativeFiles).not.toContain('ai-context.md');
+        expect(relativeFiles).not.toContain('ai-context-index.md');
         expect(relativeFiles).not.toContain('project-summary.md');
     });
 

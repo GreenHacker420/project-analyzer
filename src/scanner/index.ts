@@ -65,6 +65,8 @@ export async function scanProject(options: ScanOptions): Promise<string[]> {
         '**/analysis-report.json',
         '**/analysis-report.html',
         '**/ai-context.md',
+        '**/ai-context-*.md',
+        '**/ai-context-domains/**',
         '**/project-summary.md'
     ];
 

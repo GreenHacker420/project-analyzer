@@ -70,6 +70,15 @@ describe('JavaScript Parser', () => {
         expect(result.functions[0].doc).toContain('This is a test function');
     });
 
+    it('should ignore regular comments when extracting docs', () => {
+        const code = `
+            // This should not become generated documentation
+            function test() {}
+        `;
+        const result = parseJS(code, 'test.ts');
+        expect(result.functions[0].doc).toBeUndefined();
+    });
+
     it('should parse arrow functions, function expressions and object methods', () => {
         const code = `
             export const arrowHandler = async (request, reply) => reply.send();
@@ -101,5 +110,43 @@ describe('JavaScript Parser', () => {
             name: 'handle',
             params: ['request', 'reply']
         });
+    });
+
+    it('should parse exported TypeScript interfaces, aliases and enums', () => {
+        const code = `
+            /** User record from auth */
+            export interface User { id: string }
+            export type UserId = string;
+            export enum Role { Admin, User }
+        `;
+        const result = parseJS(code, 'test.ts');
+        expect(result.types).toEqual(expect.arrayContaining([
+            expect.objectContaining({ name: 'User', kind: 'interface' }),
+            expect.objectContaining({ name: 'UserId', kind: 'type' }),
+            expect.objectContaining({ name: 'Role', kind: 'enum' })
+        ]));
+        expect(result.types?.find(type => type.name === 'User')?.doc).toContain('User record from auth');
+        expect(result.exports).toEqual(expect.arrayContaining(['User', 'UserId', 'Role']));
+    });
+
+    it('should parse symbol-level calls', () => {
+        const code = `
+            function outer() {
+                helper();
+                service.run();
+            }
+
+            class Controller {
+                index(request, reply) {
+                    return reply.send();
+                }
+            }
+        `;
+        const result = parseJS(code, 'test.ts');
+        expect(result.calls).toEqual(expect.arrayContaining([
+            expect.objectContaining({ caller: 'outer', callee: 'helper' }),
+            expect.objectContaining({ caller: 'outer', callee: 'service.run' }),
+            expect.objectContaining({ caller: 'Controller.index', callee: 'reply.send' })
+        ]));
     });
 });
